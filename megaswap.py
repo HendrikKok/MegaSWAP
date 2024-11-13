@@ -81,7 +81,7 @@ def head2pf(phead: np.ndarray) -> np.ndarray:
     return np.log10(-m2cm*phead)
 
 def sigma2phead(sigma: np.ndarray, fig: np.ndarray, ig:np.ndarray) -> tuple[np.ndarray,np.ndarray]:
-    sigma1d = (sigmabtb[:, ig] * fig * (sigmabtb[:, ig + 1] - sigmabtb[:, ig])).to_numpy().ravel()
+    sigma1d = (sigmabtb[:, ig] + fig * (sigmabtb[:, ig + 1] - sigmabtb[:, ig])).to_numpy().ravel()
     ip = np.searchsorted(sigma1d, sigma, sorter = np.argsort(sigma1d)) - 1
     if (ip > sigma1d.size):
         raise ValueError('out of bounds sigmabtb')
@@ -106,20 +106,16 @@ xi_theta = 1.0 # schaling factor
 
 
 # first attempt
-
 ig, fig = gwl_to_index(init_gwl)
 ip, fip = phead_to_index(pf2head(init_pF))
-svold = tabel.svtb[ip, ig, 0].to_numpy().ravel() * dtgw # box 1 -> for now initial volume; not sure about this!
+svold = tabel.svtb[ip, ig, 0].to_numpy().ravel()# box 1 -> for now initial volume; not sure about this!
 
 ## ---- do UNSA ---- ## box 1
 
-# get tabel position for current prz
-ip, fip = phead_to_index(pf2head(init_pF))
-
 # get initial storage volume
 sigmabtb = tabel.svtb[:,:,0] - dtgw * tabel.qmrtb[:,:] # first box; sigma12tbfu
-sigmaln = sigmabtb[ip, ig] * fig*(sigmabtb[ip, ig + 1] - sigmabtb[ip, ig])
-sigma_old = sigmaln
+# sigmaln = sigmabtb[ip, ig] * fig*(sigmabtb[ip, ig + 1] - sigmabtb[ip, ig])
+sigma_old = svold
 
 # add recharge to get new volume
 sigma = svold + qrch[0] * dtgw 
