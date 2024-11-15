@@ -5,7 +5,9 @@ import math
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 
-tabel = xr.open_dataset('unsa_001.nc')
+tabel = xr.open_dataset('database\\unsa_001.nc')
+tabel['svtb'] = tabel['svtb'].where(tabel['svtb'] < 100.0).fillna(0.0)
+tabel['qmrtb'] = tabel['qmrtb'].where(tabel['qmrtb'] < 100).fillna(0.0)
 
 mv = 0.0
 bot = 13.0
