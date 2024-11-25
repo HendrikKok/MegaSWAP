@@ -36,7 +36,7 @@ dpgwtb = pd.DataFrame(
 ptb_index = np.arange(nlip, nuip + 1)
 ptb_values = np.zeros_like(ptb_index, dtype=np.float64)
 ptb_values[ptb_index <= 0] = -ddpptb * ptb_index[ptb_index <= 0]
-ptb_values[ptb_index > 0] = -cm2m*(10**(ptb_index[ptb_index > 0]) * ddpptb)
+ptb_values[ptb_index > 0] = -cm2m*(10**(ptb_index[ptb_index > 0] * ddpptb))
 ptb = pd.DataFrame(
     data = {'value': ptb_values},
     index = ptb_index
