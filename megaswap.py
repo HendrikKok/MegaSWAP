@@ -25,12 +25,12 @@ nxuig = tabel.nuig
 dc = 0.1e-6
 
 igdc = pd.DataFrame(
-       data = {'index_gwtb': tabel.igdc.to_numpy()
+       data = {'index_gwtb': tabel.igdc.to_numpy().astype(dtype=np.int32)
         }, index = np.arange(tabel.igdcmn, tabel.igdcmx + 1, 1)
        )
 dpgwtb = pd.DataFrame(
        data = {'value': tabel['dpgwtb'].to_numpy()
-        }, index = np.arange(nxlig - 1 , nxuig + 2, 1)
+        }, index = np.arange(nxlig - 1 , nxuig + 1, 1)
        )
 
 ptb_index = np.arange(nlip, nuip + 1)
@@ -53,29 +53,29 @@ def gwl_to_index(gwl: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     # maximize on array size?
     igk = np.maximum(igk, nlig - 1)
     figk = (dpgw - dpgwtb['value'][igk].to_numpy()) / (dpgwtb['value'][igk + 1].to_numpy() - dpgwtb['value'][igk].to_numpy())
-    return igk,figk
+    return igk.item(),figk.item()
 
 
-def phead_to_index(pF: np.ndarray) -> tuple[np.ndarray,np.ndarray]:
-    if not isinstance(pF, np.ndarray):
-        pF = np.array([pF])
+def phead_to_index(ph: np.ndarray) -> tuple[np.ndarray,np.ndarray]:
+    if not isinstance(ph, np.ndarray):
+        ph = np.array([ph])
     # positive ph = ponding -> so linear
-    pFtb = -pF/ddpptb
+    pFtb = -ph/ddpptb
     ip = pFtb.astype(dtype= np.int32) - 1  # int function for <0 rounds towards zero
     fip  = pFtb - ip
     # ph from zero to -1 cm 
-    mask = pF < 0.0
+    mask = ph < 0.0
     ip[mask] = 0
     fip[mask] = 0
     # ph from -1 cm onwards
-    mask = pF < -1 * cm2m
-    pFtb[mask] = np.log10(-m2cm*pF[mask])/ddpptb
+    mask = ph < -1 * cm2m
+    pFtb[mask] = np.log10(-m2cm*ph[mask])/ddpptb
     ip[mask] = np.minimum(pFtb[mask].astype(dtype=np.int32), nuip - 1)
     fip[mask] = pFtb[mask] - ip[mask]
     # min and maximize fractions
     fip = np.maximum(fip, 0.0)
     fip = np.minimum(fip, 1.0)
-    return ip, fip
+    return ip.item(), fip.item()
 
 
 def pf2head(pf: np.ndarray) -> np.ndarray:
@@ -85,12 +85,15 @@ def head2pf(phead: np.ndarray) -> np.ndarray:
     return np.log10(-m2cm*phead)
 
 def sigma2phead(sigma: np.ndarray, fig: np.ndarray, ig:np.ndarray) -> np.ndarray:
+    # sigma values could contain equal values?
     sigma1d = (sigmabtb[:, ig] + fig * (sigmabtb[:, ig + 1] - sigmabtb[:, ig])).to_numpy().ravel()
     sorter = np.argsort(sigma1d)
     ip = sorter[np.searchsorted(sigma1d, sigma, sorter = sorter)]
     if (ip > sigma1d.size):
         raise ValueError('out of bounds sigmabtb')
     fip = (sigma - sigma1d[ip]) / (sigma1d[ip + 1] - sigma1d[ip])
+    if not np.isfinite(fip):
+        fip = 1.0
     phead_cm = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
     return phead_cm * cm2m
 
@@ -101,7 +104,7 @@ def get_q(ip, fip, ig, fig) -> np.ndarray:
 # input
 init_pF = np.array([2.2])
 init_gwl = np.array([-6.0])
-rch = np.array([0.0001,0.0,0.0003,0.0001,0.0])
+rch = np.array([0.0001,0.0002,0.0003,0.0001,0.00005])
 
 # box
 box_area = np.array([10.0 * 10.0])
@@ -143,7 +146,7 @@ for itime in range(ntime):
             qin = -qrch[itime]
         else:
             qin = -q[ibox - 1, itime] # switch sign
-        sigma = svold[ibox,itime] + qin * dtgw 
+        sigma = svold[ibox, itime] + qin * dtgw 
 
         # get new phead and indexes
         phead[ibox, itime] = sigma2phead(sigma, fig, ig)
@@ -151,7 +154,8 @@ for itime in range(ntime):
         
         # update q
         q[ibox, itime] = get_q(ip, fip, ig, fig)
-
+    if itime + 1 < ntime:
+        phead[:, itime + 1] = phead[:, itime]
 
 
 pass
