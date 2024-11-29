@@ -239,37 +239,37 @@ box_bottom = np.array(
 )
 ig_box_bottom = get_ig_box_bottom(box_bottom)
 
-qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005])
+qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005, 0.0, 0.005,0.006,0.001,0.001,0.002])
 svold = np.zeros(nbox)
 sv = np.zeros(nbox)
 
-figure, ax = plt.subplots(5,figsize=(5,10)) # 5
+figure, ax = plt.subplots(2,figsize=(5,10)) # 5
+ip, fip = phead_to_index(pf2head(init_pF))
 
-for qrch, iplot in zip(qrch_ar,range(qrch_ar.size)):
-    svold = np.zeros(nbox)
+# first timestep at initial volume
+ig, fig = gwl_to_index(init_gwl)
+
+# init qmv
+qmv = np.zeros(nbox)
+qmv[:] = init_qmv(ig,fig,ip,fip)
+    
+non_submerged_boxes = np.arange(nbox)[box_bottom > init_gwl]
+
+q_list = []
+for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
     sv = np.zeros(nbox)
 
-    # first timestep at initial volume
-    ig, fig = gwl_to_index(init_gwl)
-    ip, fip = phead_to_index(pf2head(init_pF))
-
-    # init sv
     svold = get_sv(ig,fig,ip,fip)
 
-    # init qmv
-    qmv = np.zeros(nbox)
-    qmv[:] = init_qmv(ig,fig,ip,fip)
     
-    itime = 0
-    qin_list = []
     ip_list = []
     fip_list = []
-    non_submerged_boxes = np.arange(nbox)[box_bottom > init_gwl]
+
     #plt.plot(np.full_like(non_submerged_boxes,init_pF), label = f'svtb_init_ip{ip}', color = 'grey')
     for ibox in non_submerged_boxes:
         print(f'box {ibox} and time {itime}')
-
-        sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb     # waarom veel kleiner dan de svold o.b.v. svtb
+        sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb
+        
         ig, fig = gwl_to_index(init_gwl)
         ig = get_max_ig(ig, ibox, ip, ig_box_bottom) 
         # add recharge to get new volume
@@ -277,7 +277,6 @@ for qrch, iplot in zip(qrch_ar,range(qrch_ar.size)):
             qin = -qrch
         else:
             qin = -qmv[ibox - 1]
-        qin_list.append(qin)
         sigma = svold[ibox] - qin * dtgw 
         # plt.plot(ibox, qin,'o', label = f'qin_{ibox}_ip{ip}')
         # plt.plot(ibox, sigma,'o', label = f'sigma_{ibox}_ip{ip}')
@@ -290,20 +289,24 @@ for qrch, iplot in zip(qrch_ar,range(qrch_ar.size)):
         fip_list.append(fip)
         # ip, fip = phead_to_index(phead[ibox])
         sv[ibox] = get_sv(ig,fig,ip,fip,ibox)
-        qmv[ibox] = get_qmv(sv[ibox], svold[ibox],ibox,qin,qmv)
-    # p = ax[iplot].plot(qin_list, non_submerged_boxes, '-o', label = 'qin')
-    ax[iplot].plot(qmv[non_submerged_boxes], non_submerged_boxes,'-o',label = 'quit') 
+        qmv[ibox] = get_qmv(sv[ibox], svold[ibox], ibox, qin, qmv)
+        
+    q_list.append(qmv[ibox] )
+    # p = ax[itime].plot(qin_list, non_submerged_boxes, '-o', label = 'qin')
+    ax[0].plot(qmv[non_submerged_boxes], non_submerged_boxes,'-o',label = f'qmv_t{itime}') 
     #ax[iplot].plot(sv[non_submerged_boxes], non_submerged_boxes,'-o',label = 'quit') 
     # p = ax[0].plot(ip_list, non_submerged_boxes,'-o',label = 'ip')
     #ax[1].plot(fip_list, non_submerged_boxes,'-o',label = f'fip_rch{qrch}', color = p[0].get_color())
     #ax[iplot].plot(head2pf(phead[non_submerged_boxes]), non_submerged_boxes,'-o',label = 'phead') 
-    ax[iplot].legend()
-    ax[iplot].set_title(f'rch = {qrch:.4f}')
-    # ax[iplot].set_xlim(0.,0.17)
-    ax[iplot].invert_yaxis()
+    ax[0].legend()
+    # ax.set_title(f'rch = {qrch:.4f}')
+    # ax.set_xlim(0.,-0.05)
+    ax[0].invert_yaxis()
+ax[1].plot(q_list, label = 'qmv bottom')
+ax[1].plot(-qrch_ar, label = 'rch')
 plt.legend()
 plt.tight_layout()
-plt.savefig("q.png")
+plt.savefig("q_pf4.2.png")
 plt.close()
 
 
