@@ -126,29 +126,27 @@ def pf2head(pf: np.ndarray) -> np.ndarray:
 def head2pf(phead: np.ndarray) -> np.ndarray:
     return np.log10(-m2cm*phead)
 
-def sigma2phead(sigma: np.ndarray, fig: np.ndarray, ig:np.ndarray) -> np.ndarray:
-    # sigma values could contain equal values?
+def sigma2ip(sigma, ip, fip, ig, fig, ibox:int | None = None) -> tuple[int, int,float]:
+    # if ibox > 0:
+    #     return ip, fip
+    #  sigma values could contain equal values?
     sigma1d = (sigmabtb.sel(ig=ig) + fig * (sigmabtb.sel(ig = ig + 1) - sigmabtb.sel(ig=ig)))
     sorter = np.argsort(sigma1d)
-    ip_sigmaln = sorter[np.searchsorted(sigma1d, sigma, sorter = sorter)].item()
-    ip = sigmabtb.ip[ip_sigmaln].item()
+    ip_sigma1d = sorter[np.searchsorted(sigma1d, sigma, sorter = sorter)].item()
+    ip = sigmabtb.ip[ip_sigma1d].item()
 
     # plt.plot([ibox, ibox], [sigma1d.min(),sigma1d.max()],'-o', label = f'sigmabtb_max_box{ibox}_ip{ip}')
     if (ip >= sigmabtb.ip.max()):
         print('out of bounds..')
         ip = sigmabtb.ip.max().item()
         fip = 0
-        phead_cm = ptb['value'][ip]
-        return phead_cm * cm2m, ip, fip
-    fip = ((sigma - sigma1d[ip_sigmaln]) / (sigma1d[ip_sigmaln + 1] - sigma1d[ip_sigmaln])).item()
-    if not np.isfinite(fip):
-        fip = 1.0
-    phead_cm = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
-    return phead_cm * cm2m, ip, fip
+        return ip, fip
+    fip = ((sigma - sigma1d[ip_sigma1d]) / (sigma1d[ip_sigma1d + 1] - sigma1d[ip_sigma1d])).item()
+    return ip, fip
 
 def get_q(ip, fip, ig, fig) -> np.ndarray:
-    qlin = (tabel['qmrtb'][:, ig] + fig * (tabel['qmrtb'][:, ig + 1] - tabel['qmrtb'][:, ig])).to_numpy().ravel()
-    return qlin[ip] + fip * (qlin[ip + 1] - qlin[ip])
+    qmr1d = (tabel['qmrtb'][:, ig] + fig * (tabel['qmrtb'][:, ig + 1] - tabel['qmrtb'][:, ig])).to_numpy().ravel()
+    return qmr1d[ip] + fip * (qmr1d[ip + 1] - qmr1d[ip])
 
 # Sv contains:
 # svgwlnfu (msw1sgwln.for) -> liniair svtb value over ip range 
@@ -189,19 +187,19 @@ def get_sv(ig, fig, ip, fip, ib=None):
         ib_range = slice(svtb.ib[0],svtb.ib[-1])
     else:
         ib_range = ib
-    sv_ip1 = svtb.sel(ig=ig,ip=ip,ib = ib_range) + fig * (svtb.sel(ig=ig+1,ip=ip,ib = ib_range) - svtb.sel(ig=ig,ip=ip,ib = ib_range))
-    sv_ip2 = svtb.sel(ig=ig,ip=ip + 1,ib = ib_range) + fig * (svtb.sel(ig=ig+1,ip=ip+1,ib = ib_range) - svtb.sel(ig=ig,ip=ip+1,ib = ib_range))
-    return (sv_ip1 + fip * (sv_ip2 - sv_ip1)).to_numpy().ravel()
+    sv_lin = svtb.sel(ig=ig,ib = ib_range) + fig * (svtb.sel(ig=ig+1,ib = ib_range) - svtb.sel(ig=ig,ib = ib_range))
+    return (sv_lin.sel(ip=ip) + fip * (sv_lin.sel(ip=ip+1) - sv_lin.sel(ip=ip))).to_numpy().ravel()
 
 
 def get_qmv(svnew: np.ndarray, svold: np.ndarray, ibox,qin,qmv) -> np.ndarray:
     if ibox == 0:
-        return (svnew - svold) / dtgw - qin
+        # return (svnew - svold) / dtgw - qin
+        return qin + (svnew - svold) / dtgw
     else:
-        return qmv[ibox - 1] + (svnew - svold)
+        return qmv[ibox - 1] + (svnew - svold) / dtgw
 
 # input
-init_pF = np.array([2.2])
+init_pF = np.array([4.2])
 init_gwl = np.array([-13.0])
 
 box_area = 10.0 * 10.0
@@ -241,12 +239,15 @@ box_bottom = np.array(
 )
 ig_box_bottom = get_ig_box_bottom(box_bottom)
 
-qrch_ar = np.array([0.0001,0.0003,0.0005,0.0007,0.00009]) * box_area
+qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005])
 svold = np.zeros(nbox)
 sv = np.zeros(nbox)
 
-for qrch in qrch_ar:
+figure, ax = plt.subplots(5,figsize=(5,10)) # 5
 
+for qrch, iplot in zip(qrch_ar,range(qrch_ar.size)):
+    svold = np.zeros(nbox)
+    sv = np.zeros(nbox)
 
     # first timestep at initial volume
     ig, fig = gwl_to_index(init_gwl)
@@ -255,64 +256,55 @@ for qrch in qrch_ar:
     # init sv
     svold = get_sv(ig,fig,ip,fip)
 
-
     # init qmv
     qmv = np.zeros(nbox)
     qmv[:] = init_qmv(ig,fig,ip,fip)
     
     itime = 0
-
+    qin_list = []
+    ip_list = []
+    fip_list = []
     non_submerged_boxes = np.arange(nbox)[box_bottom > init_gwl]
-    plt.plot(np.full_like(non_submerged_boxes,init_pF), label = f'svtb_init_ip{ip}', color = 'grey')
+    #plt.plot(np.full_like(non_submerged_boxes,init_pF), label = f'svtb_init_ip{ip}', color = 'grey')
     for ibox in non_submerged_boxes:
         print(f'box {ibox} and time {itime}')
 
         sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb     # waarom veel kleiner dan de svold o.b.v. svtb
-
         ig, fig = gwl_to_index(init_gwl)
-        ig = get_max_ig(ig,ibox,ip,ig_box_bottom) 
+        ig = get_max_ig(ig, ibox, ip, ig_box_bottom) 
         # add recharge to get new volume
         if ibox == 0:
             qin = -qrch
         else:
-            qin = qmv[ibox - 1]
-
-        sigma = svold[ibox] + qin * dtgw 
+            qin = -qmv[ibox - 1]
+        qin_list.append(qin)
+        sigma = svold[ibox] - qin * dtgw 
         # plt.plot(ibox, qin,'o', label = f'qin_{ibox}_ip{ip}')
         # plt.plot(ibox, sigma,'o', label = f'sigma_{ibox}_ip{ip}')
         # plt.plot(ibox, sigma,'o', label = f'sigma_{ibox}_ip{ip}')
-        phead[ibox], ip, fip = sigma2phead(sigma, fig, ig)
+        
+        # ip vastzetten op rtzone?
+        ip, fip = sigma2ip(sigma,ip,fip,ig,fig,ibox)
+        phead[ibox] = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
+        ip_list.append(ip)
+        fip_list.append(fip)
         # ip, fip = phead_to_index(phead[ibox])
         sv[ibox] = get_sv(ig,fig,ip,fip,ibox)
         qmv[ibox] = get_qmv(sv[ibox], svold[ibox],ibox,qin,qmv)
-    plt.plot(head2pf(phead[non_submerged_boxes]), label = f'sv_ip{ip}')
-
-# plt.legend()
+    # p = ax[iplot].plot(qin_list, non_submerged_boxes, '-o', label = 'qin')
+    ax[iplot].plot(qmv[non_submerged_boxes], non_submerged_boxes,'-o',label = 'quit') 
+    #ax[iplot].plot(sv[non_submerged_boxes], non_submerged_boxes,'-o',label = 'quit') 
+    # p = ax[0].plot(ip_list, non_submerged_boxes,'-o',label = 'ip')
+    #ax[1].plot(fip_list, non_submerged_boxes,'-o',label = f'fip_rch{qrch}', color = p[0].get_color())
+    #ax[iplot].plot(head2pf(phead[non_submerged_boxes]), non_submerged_boxes,'-o',label = 'phead') 
+    ax[iplot].legend()
+    ax[iplot].set_title(f'rch = {qrch:.4f}')
+    # ax[iplot].set_xlim(0.,0.17)
+    ax[iplot].invert_yaxis()
+plt.legend()
 plt.tight_layout()
-plt.savefig("test.png")
+plt.savefig("q.png")
 plt.close()
-
-
-
-
-
-# plt.plot(q_in[:, 0],'o-',label ='qin')
-# plt.plot(q_uit[:, 0],'o-',label ='quit')
-# plt.plot(phead[:, 0],'o-',label ='presure')
-# plt.plot(sigma_list, 'o-',label = 'sigma list')
-# plt.legend()
-# plt.tight_layout()
-# plt.savefig("ts1.png")
-# plt.close()
-
-
-
-##     Function value
-#     svgwlnfu = ( svtb(b,ig,ip,slrz) + 
-#    &             fip*(svtb(b,ig,ip+1,slrz) - svtb(b,ig,ip,slrz)) )*
-#    &                Xi_theta(k)
-
-
 
 
 
