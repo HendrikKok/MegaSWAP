@@ -316,10 +316,53 @@ def f_smoothing(iter):
         return max(omegalv,0.0)
 
 
+def update_unsa(ig, phead, qrch)-> tuple[np.ndarray,np.ndarray]:
+    for ibox in non_submerged_boxes:
+        # ig_local = get_max_ig(ig, ibox, ip[ibox], ig_box_bottom) 
+        # add recharge to get new volume
+        if ibox == 0:
+            qin = -qrch
+        else:
+            qin = qmv[ibox - 1]
+        sigma = svold[ibox] - qin * dtgw 
+        ip, fip = sigma2ip(sigma, ig, fig, ibox)
+        phead[ibox] = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
+        # ip, fip = phead_to_index(phead[ibox])
+        sv[ibox] = get_sv(ig,fig,ip,fip,ibox)
+        qmv[ibox] = get_qmv(sv[ibox], svold[ibox], ibox, qin, qmv)
+    return phead, sv, qmv
+
+def summed_sv(sv):
+    s = 0.0
+    for ibox in non_submerged_boxes:
+        s +=sv[ibox]
+    return s
+
+def get_unsa_heads(sarg, sgwln, prz, lvgw_old, ig_start):
+    ig = ig_start
+    sgwln[ig] = msw1sgwlnkig(ig, ig_old, prz, lvgw_old)
+    sgwln[ig + 1] = msw1sgwlnkig(ig, ig_old, prz, lvgw_old)
+    dif = sgwln[ig+1] - sarg
+    ig = None
+    if dif < 0.0:
+        for ig in range(ig_start, -1, -1):
+            sgwln[ig] = msw1sgwlnkig(ig, ig_old, prz, lvgw_old)
+            if sarg <= sgwln[ig] and sarg >= sgwln[ig+1]:
+                break
+    else:
+        for ig in range(ig_start, 51, 1):
+            sgwln[ig + 1] = msw1sgwlnkig(ig + 1, ig_old, prz, lvgw_old)
+            if sarg <= sgwln[ig] and sarg >= sgwln[ig+1]:
+                break
+    fig = (sarg-sgwln[ig])/(sgwln[ig+1]-sgwln[ig])
+    return mv - (dpgwtb.loc[ig] + fig*(dpgwtb.loc[ig+1]-dpgwtb.loc[ig])), ig, fig
+    
+
+
 
 # input
 init_pF = np.array([1.2])
-init_gwl = np.array([-6.0])
+init_gwl = np.array([-6.9])
 
 box_area = 10.0 * 10.0
 box_top = np.array([0.0, -5.0])
@@ -331,10 +374,6 @@ xi_theta = 1.0 # schaling factor
 
 # first attempt
 nbox = 18
-phead = np.zeros((nbox))
-# first timestep at initial pF
-phead[:] = pf2head(init_pF) 
-
 box_bottom = np.array(
     [-1.000,
     -1.150,
@@ -356,42 +395,31 @@ box_bottom = np.array(
     -100.0,
     ]
 )
+
 ig_box_bottom = get_ig_box_bottom(box_bottom)
 
-qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005, 0.0, 0.005,0.006,0.001,0.001,0.002])
+# qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005, 0.0, 0.005,0.006,0.001,0.001,0.002])
+qrch_ar = np.array([0.016]*80)
 svold = np.zeros(nbox)
 sv = np.zeros(nbox)
 qmv = np.zeros(nbox)
 
-non_submerged_boxes = np.arange(nbox)[box_bottom > init_gwl]
+gwl_unsa = np.full_like(qrch_ar,init_gwl)
+
+non_submerged_boxes = np.arange(nbox)[box_bottom >= init_gwl]
 q_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
-
-
-def update_unsa(ig, phead, qrch)-> tuple[np.ndarray,np.ndarray]:
-    for ibox in non_submerged_boxes:
-        # ig_local = get_max_ig(ig, ibox, ip[ibox], ig_box_bottom) 
-        # add recharge to get new volume
-        if ibox == 0:
-            qin = -qrch
-        else:
-            qin = -qmv[ibox - 1]
-        sigma = svold[ibox] - qin * dtgw 
-        ip, fip = sigma2ip(sigma, ig, fig, ibox)
-        phead[ibox] = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
-        # ip, fip = phead_to_index(phead[ibox])
-        sv[ibox] = get_sv(ig,fig,ip,fip,ibox)
-        qmv[ibox] = get_qmv(sv[ibox], svold[ibox], ibox, qin, qmv)
-    return phead, sv, qmv
-
-def summed_sv(sv):
-    s = 0.0
-    for ibox in non_submerged_boxes:
-        s +=sv[ibox]
-    return s
+phead_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
 
 gwl = init_gwl
 gwl_old = gwl
-phead = np.full(nbox, pf2head(init_pF))
+phead = np.full(nbox, 0.0)
+z = np.zeros_like(box_bottom)
+#dz = np.diff(box_bottom) / 2
+z[1:] = box_bottom[1:]
+mask = init_gwl <= box_bottom
+phead[mask] = -(z-init_gwl)[mask]
+phead_init = np.copy(phead)
+
 s_old = 0
 
 ig, fig = gwl_to_index(gwl)
@@ -400,13 +428,22 @@ for ibox in range(nbox):
     svold[ibox] = get_sv(ig,fig,ip[ibox],fip[ibox], ibox)      
 
 sgwln = np.full(svtb.ig.size, -999.0)
+vsim_list = []
+sc1_list = []
+s_list = []
+sold_list = []
+sdif_list = []
+tig_list = []
+tfig_list = []
 for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
     ip_old, fip_old = phead_to_index(phead)
+    ig_old = np.copy(ig)
     sgwln[:] = 999.0
-    sc1_list = []
-    vsim_list = []
+    if itime > 0:
+        gwl = np.array([gwl_unsa[itime -1]])
+
     ip_list = []
-    for iter in range(5):
+    for iter in range(1):
         ig, fig = gwl_to_index(gwl)
         phead, sv, qmv = update_unsa(ig, phead, qrch)
         s = summed_sv(sv)
@@ -418,17 +455,56 @@ for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
             # vsim + sc1_default
             pass
         elif iter > 0:
-            sc1, sgwln = update_sc1(gwl, gwl_old, s, s_old, phead, sgwln)
-            sc1_list.append(sc1)
+            pass
+        sc1, sgwln = update_sc1(gwl, gwl_old, s, s_old, phead, sgwln)
+        sc1_list.append(sc1)
+        s_list.append(s)
+        sold_list.append(s_old)
+        sdif_list.append(s_old-s)
 
-        ig_old = ig
-        gwl_old = gwl
-        phead_old = phead
-    svold = sv
-        
-    
+        ig_old = np.copy(ig)
+        gwl_old = np.copy(gwl)
+        phead_old = np.copy(phead)
+    svold = np.copy(sv)
+    phead_out[itime,0:4] = phead[0:4]
+    gwl_unsa[itime], tig, tfig = get_unsa_heads(s, sgwln, phead, gwl_old, ig)
+    tig_list.append(tig)
+    tfig_list.append(tfig)
+    # gwl = np.array([gwl_unsa[itime]])
+
+# plot 1
+figure, ax = plt.subplots(1,2)
+ax[1].plot(phead_init[0:4], z[0:4], color= 'black')
+n = int(qrch_ar.size/10)
+for itime in range(0,qrch_ar.size,n):
+    ax[1].plot(phead_out[itime,0:4], z[0:4], label = f"t={itime}")
+
+ax[1].hlines(0.0,phead_init[0],phead_init[4], color='grey')
+for ibox in range(4):
+    ax[1].hlines(box_bottom[ibox],phead_init[0],phead_init[4], color='grey')
+ax[1].hlines(init_gwl,phead_init[0],phead_init[4],color='blue',linestyle='--')
+ax[1].legend()
+
+for ibox in range(4):
+    ax[0].plot(phead_out[:,ibox], label = f"box={ibox}")
+ax[0].legend()
+plt.tight_layout()
+plt.savefig(f"pheads_dtgw_{dtgw}.png")
+plt.close()
 
 
+figure, ax = plt.subplots(4)
+ax[0].plot(qrch_ar, label = 'pp')
+ax[0].plot(vsim_list, label = 'qunsa')
+ax[1].plot(sc1_list, label = 'sc1')
+ax[2].plot(gwl_unsa, label = 'gwl')
+ax[3].plot(s_list, label = 's')
 
+ax[0].legend()
+ax[1].legend()
+ax[2].legend()
+plt.tight_layout()
+plt.savefig(f"recharge_dtgw_{dtgw}.png")
+plt.close()
 
 pass
