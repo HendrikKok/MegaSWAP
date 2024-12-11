@@ -8,7 +8,7 @@ import copy
 
 
 
-tabel = xr.open_dataset('database\\unsa_001.nc')
+tabel = xr.open_dataset('database\\unsa_002.nc')
 tabel['svtb'] = tabel['svtb'].where(tabel['svtb'] < 100.0).fillna(0.0)
 tabel['qmrtb'] = tabel['qmrtb'].where(tabel['qmrtb'] < 100).fillna(0.0)
 
@@ -26,6 +26,10 @@ nlip = tabel.nlip
 nxlig = tabel.nxlig
 nxuig = tabel.nuig
 dc = 0.1e-6
+sc1min = 1.0e-03
+sc1_default = 0.15
+rootzone_dikte = 0.5
+
 
 igdc = pd.DataFrame(
        data = {'index_gwtb': tabel.igdc.to_numpy().astype(dtype=np.int32)
@@ -117,7 +121,7 @@ def phead_to_index(ph: np.ndarray) -> tuple[np.ndarray,np.ndarray]:
     # min and maximize fractions
     fip = np.maximum(fip, 0.0)
     fip = np.minimum(fip, 1.0)
-    return ip.item(), fip.item()
+    return ip, fip
 
 
 def pf2head(pf: np.ndarray) -> np.ndarray:
@@ -126,10 +130,9 @@ def pf2head(pf: np.ndarray) -> np.ndarray:
 def head2pf(phead: np.ndarray) -> np.ndarray:
     return np.log10(-m2cm*phead)
 
-def sigma2ip(sigma, ip, fip, ig, fig, ibox:int | None = None) -> tuple[int, int,float]:
-    # if ibox > 0:
-    #     return ip, fip
+def sigma2ip(sigma, ig, fig, ibox:int) -> tuple[int,float]:
     #  sigma values could contain equal values?
+    sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb
     sigma1d = (sigmabtb.sel(ig=ig) + fig * (sigmabtb.sel(ig = ig + 1) - sigmabtb.sel(ig=ig)))
     sorter = np.argsort(sigma1d)
     ip_sigma1d = sorter[np.searchsorted(sigma1d, sigma, sorter = sorter)].item()
@@ -138,15 +141,31 @@ def sigma2ip(sigma, ip, fip, ig, fig, ibox:int | None = None) -> tuple[int, int,
     # plt.plot([ibox, ibox], [sigma1d.min(),sigma1d.max()],'-o', label = f'sigmabtb_max_box{ibox}_ip{ip}')
     if (ip >= sigmabtb.ip.max()):
         print('out of bounds..')
+        ip = sigmabtb.ip.max().item() - 1
+        fip = 1.0
+        return ip, fip
+    fip = ((sigma - sigma1d[ip_sigma1d]) / (sigma1d[ip_sigma1d + 1] - sigma1d[ip_sigma1d])).item()
+    return ip, fip
+
+def qmr2ip(qmr, ig, sigmabtb) -> tuple[int,float]:
+    qmr1d = qmrtb.sel(ig=ig)
+    sorter = np.argsort(qmr1d)
+    ip_qmr1d = sorter[np.searchsorted(qmr1d, qmr, sorter = sorter)].item()
+    ip = qmr1d.ip[ip_qmr1d].item()
+    if (ip >= sigmabtb.ip.max()):
+        print('out of bounds..')
         ip = sigmabtb.ip.max().item()
         fip = 0
         return ip, fip
-    fip = ((sigma - sigma1d[ip_sigma1d]) / (sigma1d[ip_sigma1d + 1] - sigma1d[ip_sigma1d])).item()
+    fip = (qmr - qmr1d.sel(ip=ip -1).item()) / (qmr1d.sel(ip=ip).item() - qmr1d.sel(ip=ip-1).item())
     return ip, fip
 
 def get_q(ip, fip, ig, fig) -> np.ndarray:
     qmr1d = (tabel['qmrtb'][:, ig] + fig * (tabel['qmrtb'][:, ig + 1] - tabel['qmrtb'][:, ig])).to_numpy().ravel()
     return qmr1d[ip] + fip * (qmr1d[ip + 1] - qmr1d[ip])
+
+
+
 
 # Sv contains:
 # svgwlnfu (msw1sgwln.for) -> liniair svtb value over ip range 
@@ -198,9 +217,109 @@ def get_qmv(svnew: np.ndarray, svold: np.ndarray, ibox,qin,qmv) -> np.ndarray:
     else:
         return qmv[ibox - 1] + (svnew - svold) / dtgw
 
+
+def update_sc1(lvgw, lvgw_old, s, sold, prz, sgwln):
+    ig_mf6, _ = gwl_to_index(lvgw)
+    treshold = 0.00025
+    sgwln[ig] = msw1sgwlnkig(ig, ig_old, prz, lvgw_old)
+    if abs(lvgw - lvgw_old) > treshold:
+        # sc1 waterbalance 
+        if lvgw > mv or lvgw_old > mv:
+            sc1_wb = (s - sold) / (lvgw - lvgw_old)
+        else:
+            sgwln[ig] = msw1sgwlnkig(ig, ig_old, prz, lvgw_old)
+            sgwln[ig + 1] = msw1sgwlnkig(ig + 1, ig_old, prz, lvgw_old)
+            sc1_wb = (sgwln[ig] - sgwln[ig + 1])/ (dpgwtb.loc[ig + 1] - dpgwtb.loc[ig])
+        sc1_wb = np.maximum(sc1_wb,sc1min)
+        sc1_wb = np.minimum(sc1_wb,1.0)
+        # sc1 waterlevel
+        #   sgwln = msw1sgwlnkig(ig_mf6, ig_old, prz, lvgw_old)
+        #   if ig_mf6 <= nuig and abs(sgwln[ig_mf6+1]) < dc:
+        #       sgwln = msw1sgwlnkig(ig_mf6 + 1, ig_old, prz, lvgw_old)
+        #   sc1_lv = sgwln[ig_mf6] - sgwln[ig_mf6+1]/(dpgwtb.sel(ig = ig_mf6 + 1) - dpgwtb.sel(ig=ig_mf6))
+        #   sc1_lv = max(sc1_lv,sc1min)
+        #   sc1_lv = min(sc1_lv,1.0)
+        #   # combined
+        #   sc1 = 0.5 * (sc1_wb + sc1_lv)
+        sc1 = sc1_wb
+        sc1 = np.maximum(sc1,sc1min)
+    elif lvgw > mv:
+        sc1 = 1.0
+    else:
+        # no change, use trajectory value
+        sgwln[ig_mf6] = msw1sgwlnkig(ig_mf6, ig_old, prz, lvgw_old)
+        sgwln[ig_mf6 + 1] = msw1sgwlnkig(ig_mf6 + 1, ig_old, prz, lvgw_old)
+        sc1 = (sgwln[ig_mf6] - sgwln[ig_mf6 + 1])/(dpgwtb.loc[ig_mf6+1] - dpgwtb.loc[ig_mf6])
+    sc1 = np.maximum(sc1,sc1min)
+    sc1 = np.minimum(sc1,1.0)
+    return sc1, sgwln
+
+def msw1sgwlnkig(ig, ig_old, prz, lvgw_old): 
+    dpgwold = mv - lvgw_old
+    sgwln= 0.0 
+    for ibox in non_submerged_boxes:
+        sgwln += svgwlnfu(ibox, ig, ig_old, prz[ibox], dpgwold)
+    return sgwln
+
+def svgwlnfu(ibox, ig, igold, prz, dpgwold):
+    sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb
+    iprz, fiprz = phead_to_index(prz)
+    # current situation ('from') 
+    peq    = -dpgwold + 0.5 * rootzone_dikte  #  equilibrium pressure head for the currentn groundwater level
+    # new situation ('to')
+    peqtb  = -dpgwtb['value'][ig] + 0.5 * rootzone_dikte  #  presure head from position in the dpgwtb-table.
+    # only for deeper table positions ig than the current one igkold
+    # only if the current situation does not have plocking
+    # only if the 'to' situation is percolation
+    # only if the current groundwater level is above the bottom of the box
+    if ig > igold and prz > peqtb:
+        if dpgwold < 0.05 or prz < peq:
+            # set to equilibrium value; from cap-rise to percolation 
+            pnew = peqtb
+            ip, fip = phead_to_index(pnew)
+        elif prz > peq:
+            # semi-implicit scheme; from percolation to percolation
+            ip = iprz  
+            fip = fiprz
+            qmvtp = qmrtb.sel(ig=ig,ip=ip).item() + fip * (qmrtb.sel(ig = ig, ip=ip+1).item() - qmrtb.sel(ig=ig, ip= ip).item())
+            # average ; allow for an increase of the percolation
+            if qmvtp < 0.0 and qmvtp < qmv[ibox]:
+                qmvtp = qmvtp*0.5 + qmv[ibox]*0.5
+            # from qmvtp find phead and indexes
+            ip, fip = qmr2ip(qmvtp, ig, sigmabtb)
+            pnewtp = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
+            pnew  = prz - (dpgwtb['value'][ig] - dpgwold)
+            if pnew > pnewtp:
+                # update index based on maximum dragdown 
+                ip, fip = phead_to_index(pnew)
+            else:
+                ip = iprz
+                fip = fiprz
+        else:
+            ip = iprz
+            fip = fiprz
+    else:
+        ip = iprz
+        fip = fiprz
+    return svtb.sel(ib = ibox, ig=ig, ip=ip).item() + fip * (svtb.sel(ib = ibox, ig=ig, ip=ip + 1).item()  - svtb.sel(ib = ibox, ig=ig, ip=ip).item())
+
+
+def f_smoothing(iter):
+    iterur1 = 3
+    iterur2 = 5
+    if iter <= iterur1:
+        return 1.0
+    elif iter > iterur2:
+        return 0.0
+    else:
+        omegalv = 1.0 - 1.0*(iter - iterur1)/(iterur2 - iterur1)
+        return max(omegalv,0.0)
+
+
+
 # input
-init_pF = np.array([4.2])
-init_gwl = np.array([-13.0])
+init_pF = np.array([1.2])
+init_gwl = np.array([-6.0])
 
 box_area = 10.0 * 10.0
 box_top = np.array([0.0, -5.0])
@@ -242,72 +361,73 @@ ig_box_bottom = get_ig_box_bottom(box_bottom)
 qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005, 0.0, 0.005,0.006,0.001,0.001,0.002])
 svold = np.zeros(nbox)
 sv = np.zeros(nbox)
-
-figure, ax = plt.subplots(2,figsize=(5,10)) # 5
-ip, fip = phead_to_index(pf2head(init_pF))
-
-# first timestep at initial volume
-ig, fig = gwl_to_index(init_gwl)
-
-# init qmv
 qmv = np.zeros(nbox)
-qmv[:] = init_qmv(ig,fig,ip,fip)
-    
+
 non_submerged_boxes = np.arange(nbox)[box_bottom > init_gwl]
+q_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
 
-q_list = []
-for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
-    sv = np.zeros(nbox)
 
-    svold = get_sv(ig,fig,ip,fip)
-
-    
-    ip_list = []
-    fip_list = []
-
-    #plt.plot(np.full_like(non_submerged_boxes,init_pF), label = f'svtb_init_ip{ip}', color = 'grey')
+def update_unsa(ig, phead, qrch)-> tuple[np.ndarray,np.ndarray]:
     for ibox in non_submerged_boxes:
-        print(f'box {ibox} and time {itime}')
-        sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb
-        
-        ig, fig = gwl_to_index(init_gwl)
-        ig = get_max_ig(ig, ibox, ip, ig_box_bottom) 
+        # ig_local = get_max_ig(ig, ibox, ip[ibox], ig_box_bottom) 
         # add recharge to get new volume
         if ibox == 0:
             qin = -qrch
         else:
             qin = -qmv[ibox - 1]
         sigma = svold[ibox] - qin * dtgw 
-        # plt.plot(ibox, qin,'o', label = f'qin_{ibox}_ip{ip}')
-        # plt.plot(ibox, sigma,'o', label = f'sigma_{ibox}_ip{ip}')
-        # plt.plot(ibox, sigma,'o', label = f'sigma_{ibox}_ip{ip}')
-        
-        # ip vastzetten op rtzone?
-        ip, fip = sigma2ip(sigma,ip,fip,ig,fig,ibox)
+        ip, fip = sigma2ip(sigma, ig, fig, ibox)
         phead[ibox] = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
-        ip_list.append(ip)
-        fip_list.append(fip)
         # ip, fip = phead_to_index(phead[ibox])
         sv[ibox] = get_sv(ig,fig,ip,fip,ibox)
         qmv[ibox] = get_qmv(sv[ibox], svold[ibox], ibox, qin, qmv)
+    return phead, sv, qmv
+
+def summed_sv(sv):
+    s = 0.0
+    for ibox in non_submerged_boxes:
+        s +=sv[ibox]
+    return s
+
+gwl = init_gwl
+gwl_old = gwl
+phead = np.full(nbox, pf2head(init_pF))
+s_old = 0
+
+ig, fig = gwl_to_index(gwl)
+ip,fip = phead_to_index(phead)
+for ibox in range(nbox):
+    svold[ibox] = get_sv(ig,fig,ip[ibox],fip[ibox], ibox)      
+
+sgwln = np.full(svtb.ig.size, -999.0)
+for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
+    ip_old, fip_old = phead_to_index(phead)
+    sgwln[:] = 999.0
+    sc1_list = []
+    vsim_list = []
+    ip_list = []
+    for iter in range(5):
+        ig, fig = gwl_to_index(gwl)
+        phead, sv, qmv = update_unsa(ig, phead, qrch)
+        s = summed_sv(sv)
+        s_old = summed_sv(svold)
+        vsim = qrch - (s - s_old) / dtgw
+        vsim_list.append(vsim) 
+        if iter == 0:
+            # exchange to modflow
+            # vsim + sc1_default
+            pass
+        elif iter > 0:
+            sc1, sgwln = update_sc1(gwl, gwl_old, s, s_old, phead, sgwln)
+            sc1_list.append(sc1)
+
+        ig_old = ig
+        gwl_old = gwl
+        phead_old = phead
+    svold = sv
         
-    q_list.append(qmv[ibox] )
-    # p = ax[itime].plot(qin_list, non_submerged_boxes, '-o', label = 'qin')
-    ax[0].plot(qmv[non_submerged_boxes], non_submerged_boxes,'-o',label = f'qmv_t{itime}') 
-    #ax[iplot].plot(sv[non_submerged_boxes], non_submerged_boxes,'-o',label = 'quit') 
-    # p = ax[0].plot(ip_list, non_submerged_boxes,'-o',label = 'ip')
-    #ax[1].plot(fip_list, non_submerged_boxes,'-o',label = f'fip_rch{qrch}', color = p[0].get_color())
-    #ax[iplot].plot(head2pf(phead[non_submerged_boxes]), non_submerged_boxes,'-o',label = 'phead') 
-    ax[0].legend()
-    # ax.set_title(f'rch = {qrch:.4f}')
-    # ax.set_xlim(0.,-0.05)
-    ax[0].invert_yaxis()
-ax[1].plot(q_list, label = 'qmv bottom')
-ax[1].plot(-qrch_ar, label = 'rch')
-plt.legend()
-plt.tight_layout()
-plt.savefig("q_pf4.2.png")
-plt.close()
+    
+
 
 
 
