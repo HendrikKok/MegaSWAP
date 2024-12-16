@@ -4,13 +4,12 @@ import matplotlib.pyplot as plt
 import math
 from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
-import copy 
 
-
-
-tabel = xr.open_dataset('database\\unsa_002.nc')
-tabel['svtb'] = tabel['svtb'].where(tabel['svtb'] < 100.0).fillna(0.0)
-tabel['qmrtb'] = tabel['qmrtb'].where(tabel['qmrtb'] < 100).fillna(0.0)
+tabel = xr.open_dataset('database\\unsa_205.nc')
+# tabel['svtb'] = tabel['svtb'].where(tabel['svtb'] < 100.0).fillna(0.0)
+# tabel['qmrtb'] = tabel['qmrtb'].where(tabel['qmrtb'] < 100).fillna(0.0)
+# tabel['svtb'] = tabel['svtb'].where(tabel['svtb'] > 100.0).fillna(0.0)
+# tabel['qmrtb'] = tabel['qmrtb'].where(tabel['qmrtb'] > 100).fillna(0.0)
 
 mv = 0.0
 bot = 13.0
@@ -53,6 +52,25 @@ qmrtb = tabel['qmrtb'].assign_coords({
     'ip': ip,
     'ig': ig,
 })
+
+
+
+
+# figure, ax = plt.subplots(1,subplot_kw={"projection": "3d"})
+# qmrtb.plot.surface(ax = ax)
+# #ax.axes.set_aspect('equal')
+# # plt.tight_layout()
+# plt.savefig("flux.png")
+# plt.close()
+# 
+# storage = svtb
+# for b in ib:
+#     figure, ax = plt.subplots(1,subplot_kw={"projection": "3d"})
+#     storage.sel(ib=b).plot.surface(ax = ax, x = 'ig', y = 'ip', yincrease = False)
+#     #ax.axes.set_aspect('equal')
+#     plt.tight_layout()
+#     plt.savefig(f"storage_box{b}.png")
+#     plt.close()
 
 def get_ig_box_bottom(box_bottom_in:np.ndarray) -> np.ndarray:
     # perched conditions? 
@@ -131,13 +149,11 @@ def head2pf(phead: np.ndarray) -> np.ndarray:
     return np.log10(-m2cm*phead)
 
 def sigma2ip(sigma, ig, fig, ibox:int) -> tuple[int,float]:
-    #  sigma values could contain equal values?
-    sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb
+    sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb  
     sigma1d = (sigmabtb.sel(ig=ig) + fig * (sigmabtb.sel(ig = ig + 1) - sigmabtb.sel(ig=ig)))
     sorter = np.argsort(sigma1d)
     ip_sigma1d = sorter[np.searchsorted(sigma1d, sigma, sorter = sorter)].item()
     ip = sigmabtb.ip[ip_sigma1d].item()
-
     # plt.plot([ibox, ibox], [sigma1d.min(),sigma1d.max()],'-o', label = f'sigmabtb_max_box{ibox}_ip{ip}')
     if (ip >= sigmabtb.ip.max()):
         print('out of bounds..')
@@ -164,30 +180,6 @@ def get_q(ip, fip, ig, fig) -> np.ndarray:
     qmr1d = (tabel['qmrtb'][:, ig] + fig * (tabel['qmrtb'][:, ig + 1] - tabel['qmrtb'][:, ig])).to_numpy().ravel()
     return qmr1d[ip] + fip * (qmr1d[ip + 1] - qmr1d[ip])
 
-
-
-
-# Sv contains:
-# svgwlnfu (msw1sgwln.for) -> liniair svtb value over ip range 
-# msw1bd.for -> lineair vgwlnfu over ig-index
-
-# msw1bd.for
-#   qmv (nxb-1) = -(Sv(nxb) - Svold(nxb)) / dtgw
-#   do b=nxb-2,1,-1
-#     qmv(b) = -(Sv(b+1) - Svold(b+1)) / dtgw + qmv(b+1)
-
-# msw1unsa.for
-# sigma(b) = Svold(b) - qmv(b-1) * dtgw
-
-# def get_sv_boxes(ig, fig, ip, fip, ib = None):
-#     if ib is None:
-#         ib_range = slice(svtb.ib[0],svtb.ib[-1])
-#     else:
-#         ib_range = ib
-#     qmv_lineair = svtb.sel(ip=ip,ib = ib_range) + fip*(svtb.sel(ip=ip+1, ib = ib_range) - svtb.sel(ip=ip, ib=ib_range))
-#     sv = qmv_lineair.sel(ig=ig) + fig * (qmv_lineair.sel(ig=ig+1) - qmv_lineair.sel(ig=ig))
-#     return sv.to_numpy().ravel()
-    
 def get_qmv_bd(svnew: np.ndarray, svold: np.ndarray) -> np.ndarray:
     qmv = np.zeros_like(svnew)
     nxb = qmv.size
@@ -207,10 +199,11 @@ def get_sv(ig, fig, ip, fip, ib=None):
     else:
         ib_range = ib
     sv_lin = svtb.sel(ig=ig,ib = ib_range) + fig * (svtb.sel(ig=ig+1,ib = ib_range) - svtb.sel(ig=ig,ib = ib_range))
-    return (sv_lin.sel(ip=ip) + fip * (sv_lin.sel(ip=ip+1) - sv_lin.sel(ip=ip))).to_numpy().ravel()
+    return (sv_lin.sel(ip=ip) + fip * (sv_lin.sel(ip=ip+1) - sv_lin.sel(ip=ip))).to_numpy().ravel().item()
 
 
-def get_qmv(svnew: np.ndarray, svold: np.ndarray, ibox,qin,qmv) -> np.ndarray:
+def get_qmv(svnew: np.ndarray, svold: np.ndarray, ibox,qin,qmv_in) -> np.ndarray:
+    qmv = np.copy(qmv_in)
     if ibox == 0:
         # return (svnew - svold) / dtgw - qin
         return qin + (svnew - svold) / dtgw
@@ -259,7 +252,7 @@ def msw1sgwlnkig(ig, ig_old, prz, lvgw_old):
     sgwln= 0.0 
     for ibox in non_submerged_boxes:
         sgwln += svgwlnfu(ibox, ig, ig_old, prz[ibox], dpgwold)
-    return sgwln
+    return sgwln.item()
 
 def svgwlnfu(ibox, ig, igold, prz, dpgwold):
     sigmabtb = svtb.sel(ib = ibox) - dtgw * qmrtb
@@ -328,6 +321,8 @@ def update_unsa(ig, phead, qrch)-> tuple[np.ndarray,np.ndarray]:
         ip, fip = sigma2ip(sigma, ig, fig, ibox)
         phead[ibox] = ptb['value'][ip] + fip * (ptb['value'][ip + 1] - ptb['value'][ip])
         # ip, fip = phead_to_index(phead[ibox])
+        ip_ar[itime,ibox] = ip
+        fip_ar[itime,ibox] = fip
         sv[ibox] = get_sv(ig,fig,ip,fip,ibox)
         qmv[ibox] = get_qmv(sv[ibox], svold[ibox], ibox, qin, qmv)
     return phead, sv, qmv
@@ -356,7 +351,14 @@ def get_unsa_heads(sarg, sgwln, prz, lvgw_old, ig_start):
                 break
     fig = (sarg-sgwln[ig])/(sgwln[ig+1]-sgwln[ig])
     return mv - (dpgwtb.loc[ig] + fig*(dpgwtb.loc[ig+1]-dpgwtb.loc[ig])), ig, fig
-    
+
+def get_non_submerged_boxes(top_boxes, ig):
+    return np.arange(top_boxes.size)[dpgwtb['value'].loc[ig] > -top_boxes]
+
+def get_plock(phead):
+    if phead[0] <= phead[1] or tabel.dpczsl < dc:
+        return True
+    return False
 
 
 
@@ -370,13 +372,12 @@ box_bot = np.array([-5.0, -8.0])
 
 box_qbot = np.zeros_like(box_top)
 dtgw = 1.0
-xi_theta = 1.0 # schaling factor
 
 # first attempt
 nbox = 18
 box_bottom = np.array(
     [-1.000,
-    -1.150,
+    -1.0 - tabel.dpczsl,
     -5.000,
     -7.000,
     -10.00,
@@ -395,34 +396,39 @@ box_bottom = np.array(
     -100.0,
     ]
 )
+box_top = np.zeros_like(box_bottom)
+box_top[1:] = box_bottom[1:] - np.diff(box_bottom)
 
 ig_box_bottom = get_ig_box_bottom(box_bottom)
 
 # qrch_ar = np.array([0.003,0.002,0.003,0.004,0.005, 0.0, 0.005,0.006,0.001,0.001,0.002])
-qrch_ar = np.array([0.016]*80)
+qrch_ar = np.array([-0.00006]*80)  #0.016]*80)-0.00012
 svold = np.zeros(nbox)
 sv = np.zeros(nbox)
 qmv = np.zeros(nbox)
 
 gwl_unsa = np.full_like(qrch_ar,init_gwl)
 
-non_submerged_boxes = np.arange(nbox)[box_bottom >= init_gwl]
-q_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
-phead_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
-
 gwl = init_gwl
 gwl_old = gwl
-phead = np.full(nbox, 0.0)
-z = np.zeros_like(box_bottom)
-#dz = np.diff(box_bottom) / 2
-z[1:] = box_bottom[1:]
-mask = init_gwl <= box_bottom
-phead[mask] = -(z-init_gwl)[mask]
-phead_init = np.copy(phead)
 
 s_old = 0
 
 ig, fig = gwl_to_index(gwl)
+
+non_submerged_boxes = get_non_submerged_boxes(box_top, ig)
+q_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
+phead_out = np.full((qrch_ar.size +1,non_submerged_boxes.size +1),np.nan) # ntime, nbox
+
+
+phead = np.full(nbox, 0.0)
+z = box_top - (box_top - box_bottom) / 2.
+mask = dpgwtb['value'].loc[ig] > -box_top
+phead[mask] = -(z-init_gwl)[0]
+phead_init = np.copy(phead)
+
+
+
 ip,fip = phead_to_index(phead)
 for ibox in range(nbox):
     svold[ibox] = get_sv(ig,fig,ip[ibox],fip[ibox], ibox)      
@@ -435,17 +441,24 @@ sold_list = []
 sdif_list = []
 tig_list = []
 tfig_list = []
+qmv_ar = np.zeros((qrch_ar.size,4))
+sv_ar = np.zeros_like(qmv_ar)
+fip_ar = np.zeros_like(qmv_ar)
+ip_ar =np.zeros_like(qmv_ar)
 for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
     ip_old, fip_old = phead_to_index(phead)
     ig_old = np.copy(ig)
     sgwln[:] = 999.0
     if itime > 0:
-        gwl = np.array([gwl_unsa[itime -1]])
-
-    ip_list = []
+        pass
+        # gwl = np.array([gwl_unsa[itime -1]])
+        # non_submerged_boxes = get_non_submerged_boxes(box_top, ig)
     for iter in range(1):
         ig, fig = gwl_to_index(gwl)
         phead, sv, qmv = update_unsa(ig, phead, qrch)
+        qmv_ar[itime,:] = qmv[0:4]
+        sv_ar[itime,:] = sv[0:4]
+        
         s = summed_sv(sv)
         s_old = summed_sv(svold)
         vsim = qrch - (s - s_old) / dtgw
@@ -456,8 +469,8 @@ for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
             pass
         elif iter > 0:
             pass
-        sc1, sgwln = update_sc1(gwl, gwl_old, s, s_old, phead, sgwln)
-        sc1_list.append(sc1)
+            sc1, sgwln = update_sc1(gwl, gwl_old, s, s_old, phead, sgwln)
+            sc1_list.append(sc1)
         s_list.append(s)
         sold_list.append(s_old)
         sdif_list.append(s_old-s)
@@ -467,25 +480,30 @@ for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
         phead_old = np.copy(phead)
     svold = np.copy(sv)
     phead_out[itime,0:4] = phead[0:4]
-    gwl_unsa[itime], tig, tfig = get_unsa_heads(s, sgwln, phead, gwl_old, ig)
-    tig_list.append(tig)
-    tfig_list.append(tfig)
+    
+    #gwl_unsa[itime], tig, tfig = get_unsa_heads(s, sgwln, phead, gwl_old, ig)
+    
+    #tig_list.append(tig)
+    
+    #tfig_list.append(tfig)
     # gwl = np.array([gwl_unsa[itime]])
 
 # plot 1
+max_box = 4
 figure, ax = plt.subplots(1,2)
-ax[1].plot(phead_init[0:4], z[0:4], color= 'black')
-n = int(qrch_ar.size/10)
+ax[1].plot(phead_init[0:max_box], z[0:max_box], color= 'black')
+# n = int(qrch_ar.size/10)
+n=1
 for itime in range(0,qrch_ar.size,n):
-    ax[1].plot(phead_out[itime,0:4], z[0:4], label = f"t={itime}")
+    ax[1].plot(phead_out[itime,0:max_box], z[0:max_box], label = f"t={itime}")
 
-ax[1].hlines(0.0,phead_init[0],phead_init[4], color='grey')
-for ibox in range(4):
-    ax[1].hlines(box_bottom[ibox],phead_init[0],phead_init[4], color='grey')
-ax[1].hlines(init_gwl,phead_init[0],phead_init[4],color='blue',linestyle='--')
+ax[1].hlines(0.0,phead_init[0],phead_init[max_box], color='grey')
+for ibox in range(max_box):
+    ax[1].hlines(box_bottom[ibox],phead_init[0],phead_init[max_box], color='grey')
+ax[1].hlines(init_gwl,phead_init[0],phead_init[max_box],color='blue',linestyle='--')
 ax[1].legend()
 
-for ibox in range(4):
+for ibox in range(max_box):
     ax[0].plot(phead_out[:,ibox], label = f"box={ibox}")
 ax[0].legend()
 plt.tight_layout()
@@ -493,18 +511,44 @@ plt.savefig(f"pheads_dtgw_{dtgw}.png")
 plt.close()
 
 
-figure, ax = plt.subplots(4)
-ax[0].plot(qrch_ar, label = 'pp')
-ax[0].plot(vsim_list, label = 'qunsa')
-ax[1].plot(sc1_list, label = 'sc1')
-ax[2].plot(gwl_unsa, label = 'gwl')
-ax[3].plot(s_list, label = 's')
+figure, ax = plt.subplots(1)
+ax.plot(qrch_ar, label = 'pp')
+ax.plot(vsim_list, label = 'qunsa')
+ax.legend()
+plt.tight_layout()
+plt.savefig(f"recharge_dtgw_{dtgw}.png")
+plt.close()
 
+
+figure, ax = plt.subplots(2)
+nn = qrch_ar.size - 1
+ax[0].plot(sc1_list, label = 'sc1')
+ax[1].plot(gwl_unsa, label = 'gwl')
+ax[1].hlines(0.0,0,nn, color='grey')
+for ibox in range(max_box):
+    ax[1].hlines(box_bottom[ibox],0,nn, color='grey')
+ax[1].hlines(init_gwl,0,nn,color='blue',linestyle='--')
+ax[1].legend()
+ax[0].legend()
+plt.tight_layout()
+plt.savefig(f"test_dtgw_{dtgw}.png")
+plt.close()
+
+
+
+figure, ax = plt.subplots(4)
+nn = qrch_ar.size - 1
+for ibox in range(4):
+    ax[0].plot(sv_ar[:,ibox], label = f'sv_{ibox}')
+    ax[1].plot(qmv_ar[:,ibox], label = f'qmv_{ibox}')
+    ax[2].plot(fip_ar[:,ibox], label = f'fip_{ibox}')
+    ax[3].plot(ip_ar[:,ibox], label = f'ip_{ibox}')
 ax[0].legend()
 ax[1].legend()
 ax[2].legend()
+ax[3].legend()
 plt.tight_layout()
-plt.savefig(f"recharge_dtgw_{dtgw}.png")
+plt.savefig(f"ds_{dtgw}.png")
 plt.close()
 
 pass
