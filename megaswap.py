@@ -551,13 +551,13 @@ for qrch, itime in zip(qrch_ar,range(qrch_ar.size)):
             pass
         if itime < 100 and itime > 0:
             pass
-            gwl[0] = gwl[0] - 0.05 # update to new heads 0.05
+            # gwl[0] = gwl[0] - 0.05 # update to new heads 0.05
         sc1, sgwln = update_sc1(gwl, gwl_old, s, s_old, phead, sgwln)
 
             
-        #gwl_unsa[itime], ig2, fig2 = get_unsa_heads(s, sgwln, phead, gwl_old, ig)
-        #gwl[0] = gwl_unsa[itime] # debug .
-        gwl_unsa[itime] = gwl[0]
+        gwl_unsa[itime], ig2, fig2 = get_unsa_heads(s, sgwln, phead, gwl_old, ig)
+        gwl[0] = gwl_unsa[itime] # debug .
+        #gwl_unsa[itime] = gwl[0]
         
 
         qmodf[itime] = (sc1 * (gwl_old - gwl) - vsim) # doet nog niet veel op phead
