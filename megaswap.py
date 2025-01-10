@@ -537,7 +537,6 @@ nbox_log = np.zeros((ntime + 1))
 for itime in range(ntime):
     vsim = megaswap.prepare_timestep(itime)
     for iter in range(niter):
-        megaswap.gwl
         sc1, nbox_log[itime+1] = megaswap.do_iter(megaswap.gwl)
         gwl_log[itime + 1] = megaswap.gwl
     megaswap.finalise_iter()
@@ -557,6 +556,10 @@ figure, ax = plt.subplot_mosaic(
 
 n = int(ntime/10)
 colors = []
+for ibox in range(max_box):
+    ax['0'].plot(phead_log[:,ibox], label = f"h{ibox}")
+ax['0'].legend()
+
 for itime in range(0,ntime,n):
     p = np.repeat(phead_log[itime,0:max_box],2)
     y = np.stack([box_top[0:max_box],box_bottom[0:max_box]],axis=1).ravel()
@@ -567,30 +570,21 @@ pmax = phead_log[np.isfinite(phead_log)].max()
 ax['1'].hlines(0.0,pmin,pmax, color='grey')
 for ibox in range(max_box):
     ax['1'].hlines(box_bottom[ibox],pmin,pmax, color='grey')
-# ax['1'].legend()
+
+ax['2'].plot(nbox_log, label = 'active boxes')
+ax['2'].legend()
 
 ax['3'].hlines(0.0,0,1, color='grey')
 for ibox in range(max_box):
     ax['3'].hlines(box_bottom[ibox],0,1, color='grey')
-# ax['3'].hlines(init_gwl,0,1,color='blue')
-
 icol = 0
 for itime in range(0,ntime,n):
-# for head in gwl_list:
     head = gwl_log[itime]
     ax['3'].hlines(head,0,1, color= colors[icol], label = f"t={itime}")
     icol+=1
 ax['3'].legend()
 
 
-# ax[1].set_xlim(-8, pmax)
-# ax[0].set_ylim(-8, pmax)
-for ibox in range(max_box):
-    ax['0'].plot(phead_log[:,ibox], label = f"h{ibox}")
-ax['0'].legend()
-
-ax['2'].plot(nbox_log, label = 'active boxes')
-ax['2'].legend()
 plt.tight_layout()
 plt.savefig("pheads.png")
 plt.close()
