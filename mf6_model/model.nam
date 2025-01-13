@@ -8,5 +8,6 @@ BEGIN PACKAGES
   OC6           model.oc
   RIV6          model.riv
   STO6          model.sto
+  RCH6          model.rch
 END PACKAGES
 

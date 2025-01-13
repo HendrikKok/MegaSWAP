@@ -1,9 +1,8 @@
-import XmiWrapper
+import datetime
+import os
+
 import numpy as np
-
-
-
-
+from xmipy import XmiWrapper
 
 # Type hints
 FloatArray = np.ndarray
@@ -67,9 +66,9 @@ class CoupledSimulation:
 
 
 def run_model(periods):
-    wdir = "model"
-    name = "GWF_1"
-    sim = Simulation(wdir, name)
+    wdir = r"d:\werkmap\prototype_metaswap\MegaSWAP\mf6_model"
+    name = "model"
+    sim = CoupledSimulation(wdir, name)
     start = datetime.datetime.now()
     sim.run(periods)
     end = datetime.datetime.now()
