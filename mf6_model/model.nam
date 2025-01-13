@@ -1,0 +1,12 @@
+BEGIN OPTIONS
+END OPTIONS
+
+BEGIN PACKAGES
+  DIS6          model.dis
+  IC6           model.ic
+  NPF6          model.npf
+  OC6           model.oc
+  RIV6          model.riv
+  STO6          model.sto
+END PACKAGES
+

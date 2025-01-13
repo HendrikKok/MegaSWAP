@@ -1,9 +1,16 @@
+import XmiWrapper
+import numpy as np
+
+
+
+
+
 # Type hints
 FloatArray = np.ndarray
 IntArray = np.ndarray
 BoolArray = np.ndarray
 
-class Simulation:
+class CoupledSimulation:
     """
     Run all stress periods in a simulation
     """

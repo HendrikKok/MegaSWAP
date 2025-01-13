@@ -1,0 +1,10 @@
+ begin options
+ end options
+  
+ begin dimensions
+   MAXBOUND           1
+ end dimensions
+  
+ begin period 1
+   5 1 1    -4.5  3   -4.5 
+ end period 1

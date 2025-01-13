@@ -1,0 +1,22 @@
+ begin options
+ SAVE_FLOWS
+ SAVE_SATURATION
+ end options
+ #
+ BEGIN GRIDDATA
+ #
+ #apply these arrays for the entire simulation
+ #
+ #icelltype(nodes) is 0:confined, 1:convertible, 4:upstream?
+   icelltype
+     constant 0
+ #
+ #K(nodes) horizontal hydraulic conductivity
+ K
+ INTERNAL  FACTOR         1   
+2
+2
+2
+2
+2
+ END GRIDDATA

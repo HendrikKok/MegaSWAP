@@ -1,0 +1,24 @@
+ BEGIN OPTIONS
+    LENGTH_UNITS METERS
+ END OPTIONS
+  
+ BEGIN DIMENSIONS 
+    NLAY 5
+    NROW 1
+    NCOL 1
+ END DIMENSIONS
+ 
+ BEGIN GRIDDATA
+  delr
+    CONSTANT     10
+  delc
+    CONSTANT     10
+  top
+    CONSTANT      0.00000000
+  botm  LAYERED
+    CONSTANT     -1
+    CONSTANT     -4
+    CONSTANT     -6
+    CONSTANT     -8
+    CONSTANT     -10
+ END GRIDDATA

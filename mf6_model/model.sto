@@ -1,0 +1,19 @@
+BEGIN OPTIONS
+   SAVE_FLOWS
+   STORAGECOEFFICIENT
+END OPTIONS
+
+BEGIN GRIDDATA
+   ICONVERT
+      constant 0
+   SS LAYERED
+   constant 0.2
+   constant 0.001
+   constant 0.001
+   constant 0.001
+   constant 0.001
+END GRIDDATA
+
+BEGIN PERIOD 1
+   transient
+END PERIOD 1
