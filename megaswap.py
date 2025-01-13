@@ -55,7 +55,6 @@ def get_sv(ig, fig, ip, fip, svtb: xr.DataArray, ib):
 def get_qmv(svnew: np.ndarray, svold: np.ndarray, ibox,qin, qmv_in, dtgw: float) -> np.ndarray:
     qmv = np.copy(qmv_in)
     if ibox == 0:
-        # return (svnew - svold) / dtgw - qin
         return qin + (svnew - svold) / dtgw
     else:
         return qmv[ibox - 1] + (svnew - svold) / dtgw
@@ -90,11 +89,7 @@ def phead_to_index(phead: np.ndarray, ddpptb:float, nuip: int) -> tuple[np.ndarr
 
 class DataBase:
     
-    def __init__(self, # The code `rootzone_dikte` is not performing any specific action in the
-    # provided snippet. It seems to be a variable name or identifier in Python
-    # code, but without any context or usage, it is difficult to determine its
-    # purpose or functionality.
-    rootzone_dikte: float, mv: float, dbase_path: str):
+    def __init__(self, rootzone_dikte: float, mv: float, dbase_path: str):
         tabel = xr.open_dataset(dbase_path)
         tabel['svtb'] = tabel['svtb'].fillna(0.0)
         tabel['qmrtb'] = tabel['qmrtb'].fillna(0.0)
@@ -291,7 +286,7 @@ class StorageFormulation:
         self.sc1min = sc1min
         
     def add_storage_tabel_element(self, ig_st, ig, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw) -> None:
-        if np.isfinite(self.storage_tabel[ig_st]).any():
+        if np.isnan(self.storage_tabel[ig_st]):
             self.storage_tabel[ig_st] = self.database.create_storage_tabel_boxes(ig, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw)
         
     def update(self, lvgw, lvgw_old, s, sold, prz, ig, ig_old, non_submerged_boxes, qmv, dtgw) -> any:
@@ -328,10 +323,10 @@ class StorageFormulation:
             sc1 = (self.storage_tabel[ig_mf6] - self.storage_tabel[ig_mf6 + 1])/(self.database.dpgwtb.loc[ig_mf6+1] - self.database.dpgwtb.loc[ig_mf6])
         sc1 = np.maximum(sc1, self.sc1min)
         sc1 = np.minimum(sc1,1.0)
-        return sc1, self.storage_tabel
+        return sc1
     
     def finalise(self)-> None:
-        self.storage_tabel[:] = 0.0
+        self.storage_tabel[:] = np.nan
 
     def f_smoothing(iter):
         iterur1 = 3
@@ -347,21 +342,26 @@ class StorageFormulation:
 class UnsaturatedZone:
     dc = 0.1e-6
     
-    def __init__(self,database: DataBase, storage_formulation: StorageFormulation, dtgw:float):
+    def __init__(self,database: DataBase, storage_formulation: StorageFormulation, dtgw:float, initial_phead:float, initial_gwl:float):
         self.database = database
         self.storage_formulation = storage_formulation
         self.dtgw = dtgw
-        self.sv = np.zeros(self.database.nbox)
         self.qmv = np.zeros(self.database.nbox)
-        self.sv_old = np.zeros_like(self.sv)
         self.storage_tabel = np.zeros(self.database.nbox)
-        self.phead = np.zeros(self.database.nbox)
-        self.ip = np.zeros(self.database.nbox)
-        self.fip = np.zeros(self.database.nbox)
+        self.phead = np.full(self.database.nbox, initial_phead)
+        self.init_soil(initial_phead, initial_gwl)
+        
+    def init_soil(self, initial_phead: float, initial_gwl: float) -> None:
+        self.sv_old = np.zeros(self.database.nbox)
+        self.ip, self.fip = phead_to_index(np.full(self.database.nbox, initial_phead), self.database.ddpptb, self.database.nuip)
+        ig, fig = self.gwl_to_index(initial_gwl)
+        for ibox in range(self.database.nbox):
+            self.sv_old[ibox] = get_sv(ig,fig,self.ip[ibox],self.fip[ibox],self.database.svtb,ibox)  
+        self.sv = np.copy(self.sv_old)
 
     def update(self, ig, fig, qrch, gwl):
         self.qmv[:] = 0.0
-        ip, fip  = phead_to_index(self.phead, self.database.ddpptb, self.database.nuip)
+        ip, _  = phead_to_index(self.phead, self.database.ddpptb, self.database.nuip)
         non_submerged_boxes = self.get_non_submerged_boxes(gwl)
         for ibox in non_submerged_boxes:
             ig_local = self.database.get_max_ig(ig, ibox, ip[ibox]) 
@@ -374,8 +374,8 @@ class UnsaturatedZone:
                 qin = self.qmv[ibox - 1]
             sigma = self.sv_old[ibox] - qin * self.dtgw 
             self.ip[ibox], self.fip[ibox] = self.database.sigma2ip(sigma, ig_local, fig, ibox, self.dtgw)
-            self.phead[ibox] = self.database.ptb['value'][ip[ibox]] + fip[ibox] * (self.database.ptb['value'][ip[ibox] + 1] - self.database.ptb['value'][ip[ibox]])
-            self.sv[ibox] = get_sv(ig_local,fig,ip[ibox],fip[ibox],self.database.svtb, ibox)
+            self.phead[ibox] = self.database.ptb['value'][self.ip[ibox]] + self.fip[ibox] * (self.database.ptb['value'][self.ip[ibox] + 1] - self.database.ptb['value'][self.ip[ibox]])
+            self.sv[ibox] = get_sv(ig_local,fig,self.ip[ibox],self.fip[ibox],self.database.svtb, ibox)
             self.qmv[ibox] = get_qmv(self.sv[ibox], self.sv_old[ibox], ibox, qin, self.qmv, self.dtgw)
         return summed_sv(self.sv), summed_sv(self.sv_old), self.phead
     
@@ -396,9 +396,9 @@ class UnsaturatedZone:
                 if sarg <= self.storage_formulation.storage_tabel[ig] and sarg >= self.storage_formulation.storage_tabel[ig+1]:
                     break
         fig = (sarg-self.storage_formulation.storage_tabel[ig])/(self.storage_formulation.storage_tabel[ig+1]-self.storage_formulation.storage_tabel[ig])
-        return self.database.mv - (self.database.dpgwtb.loc[ig] + fig*(self.database.dpgwtb.loc[ig+1]-self.database.dpgwtb.loc[ig])), ig, fig
+        return (self.database.mv - (self.database.dpgwtb.loc[ig] + fig*(self.database.dpgwtb.loc[ig+1]-self.database.dpgwtb.loc[ig])))[0].item()
 
-    def finalize(self, ig, fig, qmodf):
+    def finalize(self, ig, fig, qmodf, gwl):
         # based on msw1bd
         # update sv based on new pressure head
         ibmax = self.database.nbox - 1 # 0-based
@@ -407,6 +407,7 @@ class UnsaturatedZone:
             self.sv[ibox] = get_sv(ig_local,fig,self.ip[ibox],self.fip[ibox],self.database.svtb, ibox)
         # update qmv's
         self.qmv[:] = 0.0
+        self.phead[:] = 0.0
         self.qmv[ibmax - 1] = -(self.sv[ibmax] - self.sv_old[ibmax]) / self.dtgw + qmodf
         if self.qmv[0] > 0.0:
             raise ValueError('inflow box 1 from bottom')
@@ -414,13 +415,7 @@ class UnsaturatedZone:
             self.qmv[ibox] = -(self.sv[ibox + 1] - self.sv_old[ibox + 1]) / self.dtgw + self.qmv[ibox+1]
         self.qmv[ibmax] = (self.sv[ibmax] - self.sv_old[ibmax]) / self.dtgw + self.qmv[ibmax - 1]
         # update prz
-        for ibox in range(ibmax):  
-            # if ibox == 0:
-            #     qin = -qrch
-            # else:
-            #     qin = qmv[ibox - 1]
-            # sigma = svold[ibox] - qin * dtgw
-            # ig_local = get_max_ig(ig_init, ibox, ip[ibox], ig_box_bottom) 
+        for ibox in self.get_non_submerged_boxes(gwl):  
             self.ip[ibox], self.fip[ibox] = self.database.sv2ip(self.sv[ibox], ig_local, fig, ibox, self.dtgw)
             self.phead[ibox] = self.database.ptb['value'][self.ip[ibox]] + self.fip[ibox] * (self.database.ptb['value'][self.ip[ibox] + 1] - self.database.ptb['value'][self.ip[ibox]])
         return self.ip, self.fip, self.phead
@@ -430,7 +425,7 @@ class UnsaturatedZone:
         mask = self.database.dpgwtb['value'].loc[ig] >= -self.database.box_top
         return np.arange(self.database.box_top.size)[mask]
 
-    def gwl_to_index(self, gwl: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def gwl_to_index(self, gwl) -> tuple[np.ndarray, np.ndarray]:
         dpgw = self.database.mv - gwl
         igk = self.database.igdc['index_gwtb'][np.floor((dpgw + self.dc) / self.database.ddgwtb)]  # ddgwtb = stepsize in igdc array
         # ponding
@@ -440,6 +435,9 @@ class UnsaturatedZone:
         igk = np.maximum(igk, self.database.nlig - 1)
         figk = (dpgw - self.database.dpgwtb['value'][igk]) / (self.database.dpgwtb['value'][igk + 1] - self.database.dpgwtb['value'][igk])
         return igk,figk
+    
+    def save_to_old(self) -> None:
+        self.sv_old = np.copy(self.sv)
 
 class MegaSwap:
 
@@ -458,14 +456,16 @@ class MegaSwap:
         self.unsaturated_zone = UnsaturatedZone(
             database = self.database, 
             storage_formulation = self.storage_formulation,
-            dtgw = self.dtgw
+            dtgw = self.dtgw,
+            initial_phead = parameters["initial_phead"],
+            initial_gwl = parameters["initial_gwl"]
         )
         self.init()
         
     def init(self):
         self.gwl_old = parameters["initial_gwl"]
         self.gwl = parameters["initial_gwl"]
-        self.phead_old = np.full(self.database.nbox, parameters["initial_phead"])
+        self.gwl_msw = parameters["initial_gwl"]
         self.ig_old = None
         
     def prepare_timestep(self, itime: int) -> float:
@@ -476,10 +476,10 @@ class MegaSwap:
             self.ig_old = np.copy(ig)
         return self.vsim
     
-    def do_iter(self, gwl) -> float:
-        non_submerged_boxes = self.unsaturated_zone.get_non_submerged_boxes(gwl)
+    def do_iter(self, gwl: float) -> float:
+        self.non_submerged_boxes = self.unsaturated_zone.get_non_submerged_boxes(gwl)
         self.ig, self.fig = self.unsaturated_zone.gwl_to_index(gwl)
-        self.sc1, self.storage_tabel = self.storage_formulation.update(
+        self.sc1 = self.storage_formulation.update(
             gwl, 
             self.gwl_old, 
             self.s, 
@@ -487,13 +487,11 @@ class MegaSwap:
             self.phead, 
             self.ig, 
             self.ig_old, 
-            non_submerged_boxes,
+            self.non_submerged_boxes,
             self.unsaturated_zone.qmv, 
             self.unsaturated_zone.dtgw
         )
-        self.gwl_old = np.copy(gwl)
-        self.gwl_msw = self.unsaturated_zone.get_gwl(self.s, self.phead, self.gwl_old, self.ig, self.ig_old, non_submerged_boxes)
-        return self.sc1, non_submerged_boxes.size
+        return self.sc1, self.non_submerged_boxes.size
     
     def finalise_iter(self) -> None:
         self.storage_formulation.finalise()
@@ -502,17 +500,22 @@ class MegaSwap:
         self.gwl = gwl
         qmodf = (self.sc1 * (self.gwl_old - self.gwl) - self.vsim)
         ig, fig = self.unsaturated_zone.gwl_to_index(self.gwl)
-        ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, qmodf)
+        ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, qmodf, gwl)
         self.save_to_old(gwl,ig,ip,fip)
         
     def save_to_old(self, gwl, ig, ip, fip) -> None:
         self.gwl_old = np.copy(gwl)
-        self.phead_old = np.copy(self.phead)
         self.ig_old = np.copy(ig)
         self.ip_old, self.fip_old = np.copy(ip), np.copy(fip)
+        self.unsaturated_zone.save_to_old()
+        
+    def get_gwl(self) -> float:
+        self.non_submerged_boxes = self.unsaturated_zone.get_non_submerged_boxes(self.gwl)
+        ig, _ = self.unsaturated_zone.gwl_to_index(self.gwl)
+        return self.unsaturated_zone.get_gwl(self.s,self.phead,self.gwl_old,ig,self.ig_old, self.non_submerged_boxes)
 
 ## entry point of script ##
-qrch = np.array([0.0016]*30)
+qrch = np.array([0.0016]*160)
 parameters = {
     "databse_path": 'database\\unsa_300.nc',
     "rootzone_dikte": 1.0,
@@ -529,18 +532,21 @@ megaswap = MegaSwap(parameters)
 ntime = qrch.size
 niter = 1
 
+gwl = parameters['initial_gwl']
+
 phead_log = np.zeros((ntime + 1, 18))
 phead_log[0,:] = parameters['initial_phead']
 gwl_log = np.zeros((ntime + 1))
 gwl_log[0] = parameters["initial_gwl"]
-nbox_log = np.zeros((ntime + 1))
+nbox_log = np.full((ntime + 1), np.nan)
 for itime in range(ntime):
     vsim = megaswap.prepare_timestep(itime)
     for iter in range(niter):
-        sc1, nbox_log[itime+1] = megaswap.do_iter(megaswap.gwl)
-        gwl_log[itime + 1] = megaswap.gwl
+        sc1, nbox_log[itime+1] = megaswap.do_iter(gwl)  
+    gwl = megaswap.get_gwl()
+    gwl_log[itime + 1] = gwl
     megaswap.finalise_iter()
-    megaswap.finalise_timestep(gwl_log[itime + 1])
+    megaswap.finalise_timestep(gwl)
     phead_log[itime + 1,:] = np.copy(megaswap.phead)  # logging
     
 # plot pheads
@@ -555,6 +561,8 @@ figure, ax = plt.subplot_mosaic(
 ) 
 
 n = int(ntime/10)
+if ntime < 10:
+    n=1
 colors = []
 for ibox in range(max_box):
     ax['0'].plot(phead_log[:,ibox], label = f"h{ibox}")
