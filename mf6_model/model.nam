@@ -6,7 +6,7 @@ BEGIN PACKAGES
   IC6           model.ic
   NPF6          model.npf
   OC6           model.oc
-  RIV6          model.riv
+  GHB6          model.ghb
   STO6          model.sto
   RCH6          model.rch
 END PACKAGES

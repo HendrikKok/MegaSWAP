@@ -17,9 +17,11 @@ class Logging:
         self.phead = np.full((ntime,18), np.nan)
         self.nbox = np.full(ntime, np.nan)
         self.mf6_head = np.full(ntime, np.nan)
+        self.msw_head = np.full(ntime, np.nan)
         self.vsim = np.full(ntime, np.nan)
         self.qmodf = np.full(ntime, np.nan)
-        self.sc1 = np.full(ntime, np.nan)
+        self.sc1 = np.full((ntime,2000), np.nan)
+        self.sf_type = np.full((ntime,2000), np.nan)
 
 class CoupledSimulation:
     """
@@ -54,13 +56,15 @@ class CoupledSimulation:
         self.mf6.prepare_solve(1)
         # Convergence loop
         for kiter in range(1, self.max_iter + 1):
-            sc1, nbox = self.msw.do_iter(self.mf6_head[0])
+            sc1, nbox, sf_type = self.msw.do_iter(self.mf6_head[0])
             self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
-            if has_converged:
+            if has_converged and kiter > 5:
                 break
-            self.log.sc1[iperiod] = sc1
+            self.log.sc1[iperiod,kiter - 1] = sc1
+            self.log.sf_type[iperiod,kiter - 1] = sf_type
         self.mf6.finalize_solve(1)
+        self.log.msw_head[iperiod] = self.msw.get_gwl()
         self.msw.finalise_iter()
         
         # Finish timestep
@@ -72,8 +76,6 @@ class CoupledSimulation:
         self.log.phead[iperiod,:] = self.msw.phead
         self.log.nbox[iperiod] = nbox
         self.log.vsim[iperiod] = vsim
-        
-        
         return current_time
 
     def get_times(self):
@@ -115,8 +117,8 @@ parameters = {
     "rootzone_dikte": 1.0,
     "qrch": qrch,
     "surface_elevation": 0.0,
-    "initial_gwl": -6.9,
-    "initial_phead": -2.0,  # -(0 - -6.9)
+    "initial_gwl": -3.0,
+    "initial_phead": -1.5,  # -(0 - -6.9)
     "dtgw": 1.0,
 }
 
@@ -180,6 +182,7 @@ plt.close()
 figure, ax = plt.subplot_mosaic(
     """
     01
+    04
     23
     """
 ) 
@@ -196,11 +199,18 @@ ax['1'].plot(log.vsim, label = 'vsim')
 ax['1'].plot(log.qmodf, label = 'qmodf')
 ax['1'].legend()
 
-ax['2'].plot(log.sc1, label = 'sc1')
+for ii in range(5):
+    ax['2'].plot(log.sc1[:,ii], label = 'sc1')
+    ax['4'].plot(log.sf_type[:,ii], label = 's-formulation')
 ax['2'].legend()
 
 ax['3'].plot(log.mf6_head, label = 'mf6-heads')
+ax['3'].plot(log.msw_head, label = 'msw-heads')
 ax['3'].legend()
+
+
+# ax['4'].legend()
+
 
 plt.tight_layout()
 plt.savefig("exchange_vars_coupled.png")

@@ -297,7 +297,9 @@ class StorageFormulation:
             # sc1 waterbalance 
             if lvgw > self.database.mv or lvgw_old > self.database.mv:
                 sc1_wb = (s - sold) / (lvgw - lvgw_old)
+                itype = 0
             else:
+                itype = 0.1
                 self.add_storage_tabel_element(ig, ig, ig_old, prz, lvgw_old,non_submerged_boxes, qmv, dtgw)
                 self.add_storage_tabel_element(ig + 1, ig + 1, ig_old, prz, lvgw_old,non_submerged_boxes, qmv, dtgw)
                 sc1_wb = (self.storage_tabel[ig] - self.storage_tabel[ig + 1])/ (self.database.dpgwtb.loc[ig + 1] - self.database.dpgwtb.loc[ig])
@@ -315,20 +317,22 @@ class StorageFormulation:
             sc1 = sc1_wb
             sc1 = np.maximum(sc1, self.sc1min)
         elif lvgw > self.database.mv:
+            itype = 2
             sc1 = 1.0
         else:
+            itype = 3
             # no change, use trajectory value
             self.add_storage_tabel_element(ig_mf6,ig_mf6, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw)
             self.add_storage_tabel_element(ig_mf6 + 1,ig_mf6 + 1, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw)
             sc1 = (self.storage_tabel[ig_mf6] - self.storage_tabel[ig_mf6 + 1])/(self.database.dpgwtb.loc[ig_mf6+1] - self.database.dpgwtb.loc[ig_mf6])
         sc1 = np.maximum(sc1, self.sc1min)
         sc1 = np.minimum(sc1,1.0)
-        return sc1
+        return sc1, itype
     
     def finalise(self)-> None:
         self.storage_tabel[:] = np.nan
 
-    def f_smoothing(iter):
+    def relaxation_factor(iter):
         iterur1 = 3
         iterur2 = 5
         if iter <= iterur1:
@@ -479,7 +483,7 @@ class MegaSwap:
     def do_iter(self, gwl: float) -> float:
         self.non_submerged_boxes = self.unsaturated_zone.get_non_submerged_boxes(gwl)
         self.ig, self.fig = self.unsaturated_zone.gwl_to_index(gwl)
-        self.sc1 = self.storage_formulation.update(
+        self.sc1, sf_type = self.storage_formulation.update(
             gwl, 
             self.gwl_old, 
             self.s, 
@@ -491,7 +495,8 @@ class MegaSwap:
             self.unsaturated_zone.qmv, 
             self.unsaturated_zone.dtgw
         )
-        return self.sc1, self.non_submerged_boxes.size
+        self.gwl_old = np.copy(gwl)
+        return self.sc1, self.non_submerged_boxes.size, sf_type
     
     def finalise_iter(self) -> None:
         self.storage_formulation.finalise()
