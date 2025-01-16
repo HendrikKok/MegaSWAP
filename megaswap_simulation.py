@@ -1,46 +1,45 @@
 import numpy as np
-import xarray as xr
 import matplotlib.pyplot as plt
-import math
-from mpl_toolkits.mplot3d import Axes3D
-import pandas as pd
+
 from megaswap import MegaSwap
 
-qrch = np.array([0.0016]*160)
+qrch = np.array([0.0026]*160)
 parameters = {
     "databse_path": 'database\\unsa_300.nc',
     "rootzone_dikte": 1.0,
     "qrch": qrch,
     "surface_elevation": 0.0,
-    "initial_gwl": -6.9,
-    "initial_phead": -(0 - -6.9),
+    "initial_gwl": -3.0,
+    "initial_phead": -1.5,  # -(0 - -6.9)
     "dtgw": 1.0,
 }
 
 megaswap = MegaSwap(parameters)
+megaswap.s_mf6 = 0.0 # dummy value
 
 # stand alone MegaSwap run
-ntime = qrch.size
+ntime = 10
 niter = 1
-
 gwl = parameters['initial_gwl']
 
-phead_log = np.zeros((ntime + 1, 18))
-phead_log[0,:] = parameters['initial_phead']
-gwl_log = np.zeros((ntime + 1))
-gwl_log[0] = parameters["initial_gwl"]
-nbox_log = np.full((ntime + 1), np.nan)
-
+# logging 
+phead_log = np.full((ntime, 18), np.nan)
+gwl_log = np.full(ntime, np.nan)
+nbox_log = np.full(ntime, np.nan)
+megaswap.sc1 = 0.1
 for itime in range(ntime):
     vsim = megaswap.prepare_timestep(itime)
-    for iter in range(niter):
-        sc1, nbox_log[itime+1] = megaswap.do_iter(gwl)  
-    gwl = megaswap.get_gwl()
-    gwl_log[itime + 1] = gwl
-    megaswap.finalise_iter()
-    megaswap.finalise_timestep(gwl)
-    phead_log[itime + 1,:] = np.copy(megaswap.phead)  # logging
+    gwl = np.copy(megaswap.get_gwl())
+    # sc1, nbox, _ = megaswap.do_iter(gwl, 0)
+    # megaswap.qmodf = 0.0
+    # megaswap.finalise_iter()
+    # megaswap.storage_formulation.finalise()
     
+    
+    qmodf = megaswap.finalise_timestep(gwl)
+    phead_log[itime,:] = np.copy(megaswap.phead)  # logging
+    gwl_log[itime] = np.copy(gwl)
+
 # plot pheads
 max_box = 4
 box_top = megaswap.database.box_top
@@ -83,8 +82,18 @@ for itime in range(0,ntime,n):
     ax['3'].hlines(head,0,1, color= colors[icol], label = f"t={itime}")
     icol+=1
 ax['3'].legend()
-
-
 plt.tight_layout()
-plt.savefig("pheads.png")
+plt.savefig("pheads_stand_alone.png")
+plt.close()
+
+figure, ax = plt.subplot_mosaic(
+    """
+    0
+    """
+) 
+ax['0'].plot(gwl_log[:], label = 'msw-heads')
+ax['0'].legend()
+# ax['4'].legend()
+plt.tight_layout()
+plt.savefig("msw_heads.png")
 plt.close()

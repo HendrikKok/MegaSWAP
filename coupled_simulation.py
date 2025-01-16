@@ -16,10 +16,10 @@ class Logging:
     def __init__(self, ntime: int):
         self.phead = np.full((ntime,18), np.nan)
         self.nbox = np.full(ntime, np.nan)
-        self.mf6_head = np.full(ntime, np.nan)
-        self.msw_head = np.full(ntime, np.nan)
+        self.mf6_head = np.full((ntime,2000), np.nan)
+        self.msw_head = np.full((ntime,2000), np.nan)
         self.vsim = np.full(ntime, np.nan)
-        self.qmodf = np.full(ntime, np.nan)
+        self.qmodf = np.full((ntime,2000), np.nan)
         self.sc1 = np.full((ntime,2000), np.nan)
         self.sf_type = np.full((ntime,2000), np.nan)
 
@@ -52,27 +52,27 @@ class CoupledSimulation:
         self.mf6.prepare_time_step(0.0)
         vsim = self.msw.prepare_timestep(iperiod)
         self.mf6_rch[:] = vsim
-        
         self.mf6.prepare_solve(1)
         # Convergence loop
-        for kiter in range(1, self.max_iter + 1):
-            sc1, nbox, sf_type = self.msw.do_iter(self.mf6_head[0])
+        for iter in range(1, self.max_iter + 1):
+            sc1, nbox, sf_type = self.msw.do_iter(self.mf6_head[0], iter)
             self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
-            if has_converged and kiter > 5:
+            if has_converged and iter > 5:
                 break
-            self.log.sc1[iperiod,kiter - 1] = sc1
-            self.log.sf_type[iperiod,kiter - 1] = sf_type
+            self.log.sc1[iperiod,iter - 1] = sc1
+            self.log.sf_type[iperiod,iter - 1] = sf_type
+            self.log.msw_head[iperiod, iter - 1] = self.msw.gwl_table
+            self.log.mf6_head[iperiod, iter -1] = self.mf6_head[0]
+            self.log.qmodf[iperiod, iter - 1] = self.msw.qmodf
         self.mf6.finalize_solve(1)
-        self.log.msw_head[iperiod] = self.msw.get_gwl()
         self.msw.finalise_iter()
         
         # Finish timestep
         self.mf6.finalize_time_step()
-        self.log.qmodf[iperiod] = self.msw.finalise_timestep(self.mf6_head[0])
+        _ = self.msw.finalise_timestep(self.mf6_head[0])
         current_time = self.mf6.get_current_time()
         
-        self.log.mf6_head[iperiod] = self.mf6_head[0]
         self.log.phead[iperiod,:] = self.msw.phead
         self.log.nbox[iperiod] = nbox
         self.log.vsim[iperiod] = vsim
@@ -122,7 +122,7 @@ parameters = {
     "dtgw": 1.0,
 }
 
-ntime = 120
+ntime = 110
 megaswap, log  = run_model(ntime, parameters)
 
 phead_log = log.phead
@@ -196,22 +196,53 @@ for ibox in range(max_box):
 ax['0'].legend()
 
 ax['1'].plot(log.vsim, label = 'vsim')
-ax['1'].plot(log.qmodf, label = 'qmodf')
+ax['1'].plot(log.qmodf[:,4], label = 'qmodf')
 ax['1'].legend()
 
 for ii in range(5):
-    ax['2'].plot(log.sc1[:,ii], label = 'sc1')
+    ax['2'].plot(log.sc1[:,ii], label = f'sc1 iter={ii}')
     ax['4'].plot(log.sf_type[:,ii], label = 's-formulation')
 ax['2'].legend()
 
-ax['3'].plot(log.mf6_head, label = 'mf6-heads')
-ax['3'].plot(log.msw_head, label = 'msw-heads')
+ax['3'].plot(log.mf6_head[:,4], label = 'mf6-heads')
+ax['3'].plot(log.msw_head[:,4],linestyle='--', label = 'msw-heads')
 ax['3'].legend()
-
-
-# ax['4'].legend()
 
 
 plt.tight_layout()
 plt.savefig("exchange_vars_coupled.png")
 plt.close()
+
+for itime in range(0,ntime,n):
+    figure, ax = plt.subplot_mosaic(
+        """
+        01
+        04
+        23
+        """
+    ) 
+    n = int(ntime/10)
+    if ntime < 10:
+        n=1
+    colors = []
+    for ibox in range(max_box):
+        ax['0'].plot(phead_log[:,ibox], label = f"h{ibox}")
+        ax['0'].plot(itime,phead_log[itime,ibox], 'ro')
+    ax['0'].legend()
+
+    ax['1'].plot(log.qmodf[itime, :], label = 'qmodf')
+    ax['1'].legend()
+
+
+    ax['2'].plot(log.sc1[itime,:], label = 'sc1')
+    ax['4'].plot(log.sf_type[itime,:], label = 's-formulation')
+    ax['2'].legend()
+
+    ax['3'].plot(log.mf6_head[itime, :], label = 'mf6-heads')
+    ax['3'].plot(log.msw_head[itime, :], label = 'msw-heads')
+    ax['3'].legend()
+    # ax['4'].legend()
+
+    plt.tight_layout()
+    plt.savefig(f"exchange_vars_coupled_t{itime}.png")
+    plt.close()
