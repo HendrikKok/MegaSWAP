@@ -61,7 +61,7 @@ MODFLOW 6 compiler options: /nologo /O2 /fpp /warn:declarations /warn:unused
 Studio\2022\Community\VC\Tools\MSVC\14.40.33807\bin\HostX64\x64" /Qm64
 
 System command used to initiate simulation:
-d:\werkmap\LHM_coupling\.pixi\envs\default\python.exe -X frozen_modules=off c:\Users\kok_hk\.vscode\extensions\ms-python.debugpy-2024.12.0-win32-x64\bundled\libs\debugpy\adapter/../..\debugpy\launcher/../..\debugpy --connect 127.0.0.1:62684 --configure-qt none --adapter-access-token 98ec1ac32406dcdb1b7c183d40b4efc90f8f6333efbfb587f86ebb8d4fa519c7 D:\werkmap\prototype_metaswap\MegaSWAP\run.py
+d:\werkmap\LHM_coupling\.pixi\envs\default\python.exe -X frozen_modules=off c:\Users\kok_hk\.vscode\extensions\ms-python.debugpy-2024.12.0-win32-x64\bundled\libs\debugpy\adapter/../..\debugpy\launcher/../..\debugpy --connect 127.0.0.1:63127 --configure-qt none --adapter-access-token 1b0f30351ea21d6dc81e0dd5c6f03d0019ba55daf0366e64370978212998db45 D:\werkmap\prototype_metaswap\MegaSWAP\run.py
 
 MODFLOW was compiled using uniform precision.
 
