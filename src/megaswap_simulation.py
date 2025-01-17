@@ -1,8 +1,5 @@
 import numpy as np
 import xarray as xr
-import matplotlib.pyplot as plt
-import math
-from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 import copy
 
@@ -582,7 +579,6 @@ class MegaSwap:
         ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, self.qmodf, gwl)
         self.storage_formulation.finalise()
         self.save_to_old(gwl,ig,ip,fip)
-        return self.qmodf
         
     def save_to_old(self, gwl, ig, ip, fip) -> None:
         self.gwl_table_old = np.copy(gwl)
@@ -597,3 +593,4 @@ class MegaSwap:
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
         ig, _ = self.unsaturated_zone.database.gwl_to_index(self.gwl_table)
         return self.unsaturated_zone.get_gwl_table(self.s,self.phead,self.gwl_table_old,ig,self.ig_table_old, self.non_submerged_boxes)
+pass

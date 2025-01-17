@@ -1,6 +1,3 @@
-import datetime
-import os
-
 import numpy as np
 from xmipy import XmiWrapper
 
@@ -9,7 +6,7 @@ FloatArray = np.ndarray
 IntArray = np.ndarray
 BoolArray = np.ndarray
 
-class CoupledSimulation:
+class Simulation:
     """
     Run all stress periods in a simulation
     """
@@ -64,16 +61,3 @@ class CoupledSimulation:
     def finalize(self):
         self.mf6.finalize()
 
-
-def run_model(periods):
-    wdir = r"d:\werkmap\prototype_metaswap\MegaSWAP\mf6_model"
-    name = "model"
-    sim = CoupledSimulation(wdir, name)
-    start = datetime.datetime.now()
-    sim.run(periods)
-    end = datetime.datetime.now()
-    print(end - start)
-    sim.finalize()
-
-
-run_model(20)

@@ -9,5 +9,6 @@ BEGIN PACKAGES
   RCH6          model.rch
   OC6           model.oc
   GHB6          model.ghb
+  WEL6          model.wel
 END PACKAGES
 
