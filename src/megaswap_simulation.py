@@ -72,9 +72,11 @@ def get_sv(ig, fig, ip, fip, svtb: xr.DataArray, ib):
         ib_range = slice(svtb.ib[0], svtb.ib[-1])
     else:
         ib_range = ib
+    # intp over ig
     sv_lin = svtb.sel(ig=ig, ib=ib_range) + fig * (
         svtb.sel(ig=ig + 1, ib=ib_range) - svtb.sel(ig=ig, ib=ib_range)
     )
+    # dan over ip
     return (
         (sv_lin.sel(ip=ip) + fip * (sv_lin.sel(ip=ip + 1) - sv_lin.sel(ip=ip)))
         .to_numpy()
@@ -103,25 +105,44 @@ def summed_sv(sv):
 def phead_to_index(
     phead: np.ndarray, ddpptb: float, nuip: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    if not isinstance(phead, np.ndarray):
-        phead = np.array([phead])
-    # positive ph = ponding -> so linear
-    pFtb = -phead / ddpptb
-    ip = pFtb.astype(dtype=np.int32) - 1  # int function for <0 rounds towards zero
-    fip = pFtb - ip
+    # if not isinstance(phead, np.ndarray):
+    #     phead = np.array([phead])
+    # # positive ph = ponding -> so linear   np.floor((dpgw + dc) / self.ddgwtb)
     # ph from zero to -1 cm
-    mask = phead < 0.0
-    ip[mask] = 0
-    fip[mask] = 0
-    # ph from -1 cm onwards
-    mask = phead < -1 * cm2m
-    pFtb[mask] = np.log10(-m2cm * phead[mask]) / ddpptb
-    ip[mask] = np.minimum(pFtb[mask].astype(dtype=np.int32), nuip - 1)
-    fip[mask] = pFtb[mask] - ip[mask]
-    # min and maximize fractions
-    fip = np.maximum(fip, 0.0)
-    fip = np.minimum(fip, 1.0)
+    def phead_per_item(phead):
+        if phead > 0.0:
+            ip = 0
+            fip = 0.0
+        elif phead < -1 * cm2m:
+            pFtb = np.log10(-m2cm * phead) / ddpptb
+            ip = int(np.minimum(np.floor(pFtb), nuip - 1))
+            fip = pFtb - float(ip)
+            return ip, fip
+        else:
+            pFtb = -phead / ddpptb
+            ip = int(np.floor(pFtb) - 1)  # int function for <0 rounds towards zero 
+            fip = pFtb - float(ip)
+        return ip, fip
+    
+    if isinstance(phead, np.ndarray):
+        ip = np.zeros(phead.shape, dtype = np.int32)
+        fip = np.zeros(phead.shape, dtype = np.float64)
+        for i in range(phead.size):
+            ip[i], fip[i] = phead_per_item(phead[i])
+    else:
+        ip, fip = phead_per_item(phead)
     return ip, fip
+    
+
+    # # ph from -1 cm onwards
+    # mask = phead < -1 * cm2m
+    # pFtb[mask] = np.log10(-m2cm * phead[mask]) / ddpptb
+    # ip[mask] = np.minimum(pFtb[mask].astype(dtype=np.int32), nuip - 1)
+    # fip[mask] = pFtb[mask] - ip[mask]
+    # # min and maximize fractions
+    # fip = np.maximum(fip, 0.0)
+    # fip = np.minimum(fip, 1.0)
+    # return ip, fip
 
 
 class DataBase:
@@ -369,6 +390,22 @@ class DataBase:
         mask = self.dpgwtb["value"].loc[ig] >= -self.box_top
         return np.arange(self.box_top.size)[mask]
 
+class Variations:
+    def __init__(self):
+        self.new = None
+        self.old = None
+        
+    def update(self, new) -> None:
+        self.old = copy.copy(self.new)
+        self.new = new
+        
+
+class SharedStates:
+    
+    def __init__(self):
+        self.gwl_table = Variations(None)
+        
+    
 
 class StorageFormulation:
 
@@ -379,14 +416,16 @@ class StorageFormulation:
         self.sc1_bak1 = sc1_min
         self.sc1_bak2 = sc1_min
         self.sc1 = sc1_min
+        self.qmodf = 0.0
+
 
     def add_storage_tabel_element(
         self, ig_st, ig, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw
     ) -> None:
-        if np.isnan(self.storage_tabel[ig_st]):
-            self.storage_tabel[ig_st] = self.database.create_storage_tabel_boxes(
-                ig, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw
-            )
+        # if np.isnan(self.storage_tabel[ig_st]):
+        self.storage_tabel[ig_st] = self.database.create_storage_tabel_boxes(
+            ig, ig_old, prz, lvgw_old, non_submerged_boxes, qmv, dtgw
+        )
 
     def update(
         self,
@@ -394,11 +433,8 @@ class StorageFormulation:
         gwl_table_old,
         gwl_mf6,
         gwl_mf6_old,
-        s,
-        s_old,
-        s_mf6,
-        s_mf6_old,
         prz,
+        prz_old,
         non_submerged_boxes,
         qmv,
         dtgw,
@@ -413,11 +449,11 @@ class StorageFormulation:
         self.sc1_bak2 = copy.copy(self.sc1_bak1)
         self.sc1_bak1 = copy.copy(self.sc1)
         itype = np.nan
-        if iter == 0:
-            if abs(gwl_mf6 - gwl_mf6_old) > treshold:
+        if iter == 1:
+            self.s_mf6_old = self.get_s(ig_mf6, fig_mf6, ig_table_old, prz, gwl_table_old,non_submerged_boxes,qmv,dtgw)
+            if abs(gwl_mf6 - gwl_table) > treshold:
                 # use change in storage deficit in unsaturated zone + dH of MF
-                sc1 = (s - s_old) / (gwl_mf6 - gwl_mf6_old)
-                itype = 1.0
+                sc1 = (self.s - self.s_mf6_old) / (gwl_table - gwl_mf6_old)
             else:
                 # no dH, use interpolated value from table
                 self.add_storage_tabel_element(
@@ -446,19 +482,16 @@ class StorageFormulation:
                     self.database.dpgwtb.loc[ig_table + 1]
                     - self.database.dpgwtb.loc[ig_table]
                 )
-                itype = 2.0
             sc1 = minmax(sc1, sc1_min, 1.0)
             sc1_level = sc1
             sc1_balance = sc1
         else:
             if abs(gwl_table - gwl_mf6) > treshold:
                 # used offset heads and change in staorage deficit
-                sc1_balance = (s - s_mf6_old) / (gwl_table - gwl_mf6_old)
-                itype = 3.0
+                sc1_balance = (self.s - self.s_mf6_old) / (gwl_table - gwl_mf6_old) 
             elif gwl_table > self.database.mv and gwl_mf6_old > self.database.mv:
                 # ponding
                 sc1_balance = 1.0
-                itype = 4.0
             else:
                 # minimal offset, use interpolated value from table
                 self.add_storage_tabel_element(
@@ -487,11 +520,11 @@ class StorageFormulation:
                     self.database.dpgwtb.loc[ig_table + 1]
                     - self.database.dpgwtb.loc[ig_table]
                 )
-                itype = 5.0
+                itype = 5.1
             sc1_balance = minmax(sc1_balance, sc1_min, 1.0)
 
             if abs(gwl_mf6 - gwl_mf6_old) > treshold:
-                sc1_level = (s_mf6 - s_mf6_old) / (gwl_mf6 - gwl_mf6_old)
+                sc1_level = (self.s_mf6 - self.s_mf6_old) / (gwl_mf6 - gwl_mf6_old)
             else:
                 self.add_storage_tabel_element(
                     ig_mf6,
@@ -520,6 +553,7 @@ class StorageFormulation:
                     - self.database.dpgwtb.loc[ig_mf6]
                 )
             sc1_level = minmax(sc1_level, sc1_min, 1.0)
+            sc1_level = copy.copy(sc1_balance)
         if gwl_mf6 > self.database.mv:
             self.sc1 = sc1_balance
         else:
@@ -535,54 +569,28 @@ class StorageFormulation:
             ).all():
                 # stabilisation in case of oscillation
                 self.sc1 = self.sc1 * 0.5 + self.sc1_bak1 * 0.5
-        # omega = self.relaxation_factor(iter)
-        # self.sc1 = self.sc1 * omega - self.sc1_bak1 * (omega - 1.0)
+        omega = self.relaxation_factor(iter)
+        self.sc1 = self.sc1 * omega - self.sc1_bak1 * (omega - 1.0)
         return self.sc1, itype
 
-    def prepare_update(
+    def finalise_update(
         self,
         gwl_mf6,
         gwl_mf6_old,
-        s_old,
-        ds,
         dtgw,
         prz,
         gwl_table,
         gwl_table_old,
         non_submerged_boxes,
         qmv,
+        rch_time, 
     ):
         ig_mf6, fig_mf6 = self.database.gwl_to_index(gwl_mf6)
         ig_table_old, _ = self.database.gwl_to_index(gwl_table)
-        # storage deficit unsaturated zone based on new mf6 heads
-        self.add_storage_tabel_element(
-            ig_mf6,
-            ig_mf6,
-            ig_table_old,
-            prz,
-            gwl_table_old,
-            non_submerged_boxes,
-            qmv,
-            dtgw,
-        )
-        self.add_storage_tabel_element(
-            ig_mf6 + 1,
-            ig_mf6 + 1,
-            ig_table_old,
-            prz,
-            gwl_table_old,
-            non_submerged_boxes,
-            qmv,
-            dtgw,
-        )
-
-        s_mf6 = self.storage_tabel[ig_mf6] + fig_mf6 * (
-            self.storage_tabel[ig_mf6 + 1] - self.storage_tabel[ig_mf6]
-        )
-        qmodf = (gwl_mf6 - gwl_mf6_old) * self.sc1 - ds * dtgw
-        s = s_old + qmodf
-        return s_mf6, s, ig_mf6, fig_mf6, qmodf
-
+        self.qmodf = (gwl_mf6 - gwl_mf6_old) * self.sc1 - (rch_time - self.ds / dtgw)
+        self.s_mf6 = self.get_s(ig_mf6, fig_mf6, ig_table_old, prz, gwl_table_old,non_submerged_boxes,qmv,dtgw) # storage deficit unsaturated zone based on new mf6 heads
+        return 
+    
     def finalise(self) -> None:
         self.storage_tabel[:] = np.nan
 
@@ -596,7 +604,31 @@ class StorageFormulation:
         else:
             omegalv = 1.0 - 1.0 * (iter - iterur1) / (iterur2 - iterur1)
             return max(omegalv, 0.0)
-
+        
+    def get_s(self, ig, fig, ig_table_old, prz, gwl_table_old,non_submerged_boxes,qmv,dtgw):
+        self.add_storage_tabel_element(
+            ig,
+            ig,
+            ig_table_old,
+            prz,
+            gwl_table_old,
+            non_submerged_boxes,
+            qmv,
+            dtgw,
+        )
+        self.add_storage_tabel_element(
+            ig + 1,
+            ig + 1,
+            ig_table_old,
+            prz,
+            gwl_table_old,
+            non_submerged_boxes,
+            qmv,
+            dtgw,
+        )
+        return self.storage_tabel[ig] + fig * (
+            self.storage_tabel[ig + 1] - self.storage_tabel[ig]
+        )
 
 class UnsaturatedZone:
 
@@ -614,7 +646,7 @@ class UnsaturatedZone:
         self.qmv = np.zeros(self.database.nbox)
         self.storage_tabel = np.zeros(self.database.nbox)
         self.phead = np.full(self.database.nbox, initial_phead)
-        self.init_soil(initial_phead, initial_gwl)
+        self.init_soil(initial_phead, initial_gwl)   
 
     def init_soil(self, initial_phead: float, initial_gwl: float) -> None:
         self.sv_old = np.zeros(self.database.nbox)
@@ -630,9 +662,10 @@ class UnsaturatedZone:
             )
         self.sv = np.copy(self.sv_old)
 
-    def update(self, ig, fig, qrch, gwl):
+    def update(self, ig, fig, qrch, gwl, gwl_table_old):
         self.qmv[:] = 0.0
         ip, _ = phead_to_index(self.phead, self.database.ddpptb, self.database.nuip)
+        ig_table_old, _ = self.database.gwl_to_index(gwl_table_old)
         non_submerged_boxes = self.database.get_non_submerged_boxes(gwl)
         for ibox in non_submerged_boxes:
             ig_local = self.database.get_max_ig(ig, ibox, ip[ibox])
@@ -659,7 +692,9 @@ class UnsaturatedZone:
             self.qmv[ibox] = get_qmv(
                 self.sv[ibox], self.sv_old[ibox], ibox, qin, self.qmv, self.dtgw
             )
-        return summed_sv(self.sv), summed_sv(self.sv_old), self.phead
+        # gives the new gwl based on new phead + s
+        self.gwl_table = self.get_gwl_table(summed_sv(self.sv), self.phead,gwl_table_old, ig_table_old, ig_table_old,non_submerged_boxes)
+        return summed_sv(self.sv), summed_sv(self.sv_old), self.phead, self.gwl_table
 
     def get_gwl_table(self, sarg, prz, lvgw_old, ig_start, ig_old, non_submerged_boxes):
         ig = ig_start
@@ -667,7 +702,7 @@ class UnsaturatedZone:
             ig, ig, ig_old, prz, lvgw_old, non_submerged_boxes, self.qmv, self.dtgw
         )
         self.storage_formulation.add_storage_tabel_element(
-            ig + 1, ig, ig_old, prz, lvgw_old, non_submerged_boxes, self.qmv, self.dtgw
+            ig + 1, ig+1, ig_old, prz, lvgw_old, non_submerged_boxes, self.qmv, self.dtgw
         )
         dif = self.storage_formulation.storage_tabel[ig + 1] - sarg
         ig = None
@@ -716,17 +751,24 @@ class UnsaturatedZone:
                 + fig
                 * (self.database.dpgwtb.loc[ig + 1] - self.database.dpgwtb.loc[ig])
             )
-        )[0].item()
+        )[0].item() #, ig, fig
 
-    def finalize(self, ig, fig, qmodf, gwl):
+    def finalize(self, ig, fig, qmodf, gwl_table, gwl_table_old):
         # based on msw1bd
         # update sv based on new pressure head
+        ig_old, _ = self.database.gwl_to_index(gwl_table_old)
         ibmax = self.database.nbox - 1  # 0-based
         for ibox in range(ibmax):
             ig_local = self.database.get_max_ig(ig, ibox, self.ip[ibox])
+            # s_ig = self.database.create_storage_tabel_box(ibox, ig_local, ig_old, self.phead[ibox], self.database.mv - self.gwl_table, self.qmv,self.dtgw)
+            # s_ig1 = self.database.create_storage_tabel_box(ibox, ig_local + 1,ig_old, self.phead[ibox], self.database.mv - self.gwl_table, self.qmv,self.dtgw)
+            # self.sv[ibox] = s_ig + fig *(s_ig1 - s_ig)
             self.sv[ibox] = get_sv(
                 ig_local, fig, self.ip[ibox], self.fip[ibox], self.database.svtb, ibox
             )
+            # self.sv[ibox] = get_sv(
+            #     ig_local, fig, self.ip[ibox], self.fip[ibox], self.database.svtb, ibox
+            # )
         # update qmv's
         self.qmv[:] = 0.0
         self.phead[:] = 0.0
@@ -742,7 +784,7 @@ class UnsaturatedZone:
             ibmax - 1
         ]
         # update prz
-        for ibox in self.database.get_non_submerged_boxes(gwl):
+        for ibox in self.database.get_non_submerged_boxes(gwl_table):
             self.ip[ibox], self.fip[ibox] = self.database.sv2ip(
                 self.sv[ibox], ig_local, fig, ibox, self.dtgw
             )
@@ -787,61 +829,48 @@ class MegaSwap:
         self.gwl_mf6_old = parameters["initial_gwl"]
         self.ig_table_old = None
         self.s_mf6_old = None
+        self.fig = 0.0
+        self.ig = None
+        self.qmodf = 0.0
+        self.phead_old = None
+        self.storage_formulation.s_old = self.unsaturated_zone.sv_old.sum()
+        self.rch_time = 0.0
+        self.unsaturated_zone.gwl_table = self.gwl_table
+        self.unsaturated_zone.gwl_table_old = self.gwl_table
+        # self.s_old = self.unsaturated_zone.sv_old.sum()
+
 
     def prepare_timestep(self, itime: int) -> float:
-        ig, fig = self.database.gwl_to_index(self.gwl_table)
-        self.s, self.s_old, self.phead = self.unsaturated_zone.update(
-            ig, fig, self.qrch[itime], self.gwl_table
-        )
-        self.vsim = self.qrch[itime] - (self.s - self.s_old) / self.dtgw
+        if self.phead_old is None:
+            self.phead_old = np.copy(self.unsaturated_zone.phead)
+        self.ig, self.fig = self.database.gwl_to_index(self.gwl_table)
+        self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
         if self.ig_table_old is None:
-            self.ig_table_old = np.copy(ig)
+            self.ig_table_old = copy.copy(self.ig)
+        # s_old = self.storage_formulation.get_s(self.ig,self.fig,self.ig_table_old,self.unsaturated_zone.phead,self.gwl_table_old, self.non_submerged_boxes, self.unsaturated_zone.qmv,self.dtgw)
+        self.rch_time = self.qrch[itime]
+        s , s_old , self.phead, self.gwl_table = self.unsaturated_zone.update(
+            self.ig, self.fig, self.qrch[itime], self.gwl_table, self.gwl_table_old
+        )
+        self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
+
+        self.storage_formulation.s = s
+        self.storage_formulation.s_old = s_old
+        self.storage_formulation.ds = s - s_old
+        self.vsim = self.rch_time - self.storage_formulation.ds / self.dtgw
         return self.vsim
 
     def do_iter(self, gwl_mf6: float, iter: int) -> float:
-        self.ig, _ = self.unsaturated_zone.database.gwl_to_index(self.gwl_table)
-        ig_mf6, fig_mf6 = self.unsaturated_zone.database.gwl_to_index(self.gwl_mf6)
-
+        # self.ig, _ = self.unsaturated_zone.database.gwl_to_index(self.gwl_table)
+        ig_mf6, fig_mf6 = self.unsaturated_zone.database.gwl_to_index(gwl_mf6)
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
-        self.ds = (
-            self.s - self.s_old
-        )  # change in storage deficit due to initial update unsaturated zone
-        # self.s_mf6 = copy.copy(self.s)
-        # s = self.s
-        self.s_mf6, s, ig_mf6, fig_mf6, self.qmodf = (
-            self.storage_formulation.prepare_update(
-                gwl_mf6,
-                self.gwl_mf6_old,
-                self.s_old,
-                self.ds,
-                self.dtgw,
-                self.phead,
-                self.gwl_table,
-                self.gwl_table_old,
-                self.non_submerged_boxes,
-                self.unsaturated_zone.qmv,
-            )
-        )
-        if self.s_mf6_old is None:
-            self.s_mf6_old = copy.copy(self.s_mf6)
-        self.gwl_table = self.unsaturated_zone.get_gwl_table(
-            self.s_mf6,
-            self.phead,
-            self.gwl_table_old,
-            self.ig,
-            self.ig_table_old,
-            self.non_submerged_boxes,
-        )
         self.sc1, sf_type = self.storage_formulation.update(
             self.gwl_table,
             self.gwl_table_old,
             gwl_mf6,
             self.gwl_mf6_old,
-            s,  # new update
-            self.s_old,
-            self.s_mf6,
-            self.s_mf6_old,
             self.phead,
+            self.phead_old,
             self.non_submerged_boxes,
             self.unsaturated_zone.qmv,
             self.unsaturated_zone.dtgw,
@@ -849,31 +878,45 @@ class MegaSwap:
             ig_mf6,
             fig_mf6,
         )
-        return self.sc1, self.non_submerged_boxes.size, sf_type
+        return copy.copy(self.sc1), self.non_submerged_boxes.size, sf_type
 
-    def finalise_iter(self) -> None:
+    def finalise_iter(self, gwl_mf6) -> None:
+        self.storage_formulation.finalise_update(
+                gwl_mf6,
+                self.gwl_mf6_old,
+                self.dtgw,
+                self.phead,
+                self.gwl_table,
+                self.gwl_table_old,
+                self.non_submerged_boxes,
+                self.unsaturated_zone.qmv,
+                self.rch_time,
+            )
+        self.storage_formulation.s = self.storage_formulation.s_old + self.rch_time + self.qmodf 
+        # self.gwl_table = self.get_gwl()
+        # self.storage_formulation.finalise()
+
+    def finalise_timestep(self, gwl_mf6) -> None:
+        ig, fig = self.database.gwl_to_index(self.gwl_table) # is dit een update?
+        ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, self.storage_formulation.qmodf, self.gwl_table, self.gwl_table_old)
         self.storage_formulation.finalise()
+        # self.s = summed_sv(self.unsaturated_zone.sv)
+        self.save_to_old(ig, ip, fip, gwl_mf6)
 
-    def finalise_timestep(self, gwl) -> float:
-        ig, fig = self.database.gwl_to_index(self.gwl_table)
-        ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, self.qmodf, gwl)
-        self.storage_formulation.finalise()
-        self.save_to_old(gwl, ig, ip, fip)
-
-    def save_to_old(self, gwl, ig, ip, fip) -> None:
-        self.gwl_table_old = np.copy(gwl)
+    def save_to_old(self, ig, ip, fip, gwl_mf6) -> None:
+        self.gwl_table_old = np.copy(self.gwl_table)
         self.ig_table_old = np.copy(ig)
         self.ip_old, self.fip_old = np.copy(ip), np.copy(fip)
-        self.s_mf6_old = copy.copy(self.s_mf6)
-        self.s_old = np.copy(self.s)
-        self.gwl_mf6_old = copy.copy(self.gwl_mf6)
+        # self.s_old = np.copy(self.s)
+        self.gwl_mf6_old = copy.copy(gwl_mf6)
+        self.phead_old = np.copy(self.phead)
         self.unsaturated_zone.save_to_old()
 
     def get_gwl(self) -> float:
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
         ig, _ = self.unsaturated_zone.database.gwl_to_index(self.gwl_table)
         return self.unsaturated_zone.get_gwl_table(
-            self.s,
+            self.storage_formulation.s,
             self.phead,
             self.gwl_table_old,
             ig,

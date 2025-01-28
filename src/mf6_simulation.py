@@ -17,6 +17,8 @@ class Logging:
         self.qmodf = np.full((ntime, 2000), np.nan)
         self.sc1 = np.full((ntime, 2000), np.nan)
         self.sf_type = np.full((ntime, 2000), np.nan)
+        self.ig = np.full(ntime, np.nan)
+        self.fig = np.full(ntime, np.nan)
 
 
 class Simulation:
@@ -92,35 +94,37 @@ class CoupledSimulation(Simulation):
     def update(self):
         self.mf6.prepare_time_step(0.0)
         vsim = self.msw.prepare_timestep(self.iperiod)
-        self.mf6_rch[:] = vsim
+        self.mf6_rch[:] = vsim  # should be in m/d
         self.mf6.prepare_solve(1)
 
         # Convergence loop
         for iter in range(1, self.max_iter + 1):
-            sc1, nbox, sf_type = self.msw.do_iter(self.mf6_head[0], iter)
+            sc1, nbox, self.log.sf_type[self.iperiod,0] = self.msw.do_iter(self.mf6_head[0], iter)
             self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
-            if has_converged and iter > 5:
+            self.msw.finalise_iter(self.mf6_head[0])
+            self.log_exchange_vars(iter -1, nbox)
+            if has_converged: #  and iter > 4
                 break
-            self.log_exchange_vars(iter, nbox)
         self.mf6.finalize_solve(1)
-        self.msw.finalise_iter()
 
         # Finish timestep
         self.mf6.finalize_time_step()
-        self.msw.finalise_timestep(self.mf6_head[0])  # TODO: try using self.gwl_table
+        self.msw.finalise_timestep(self.mf6_head[0])
+        
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
 
     def log_exchange_vars(self, iter, nbox) -> None:
-        self.log.sc1[self.iperiod, iter - 1] = self.mf6_sto[0]
-        self.log.msw_head[self.iperiod, iter - 1] = self.msw.gwl_table
-        self.log.mf6_head[self.iperiod, iter - 1] = self.mf6_head[0]
-        self.log.qmodf[self.iperiod, iter - 1] = self.msw.qmodf
+        self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
+        self.log.msw_head[self.iperiod, iter] = self.msw.gwl_table
+        self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
+        self.log.qmodf[self.iperiod, iter] = self.msw.storage_formulation.qmodf
         self.log.phead[self.iperiod, :] = self.msw.phead
         self.log.nbox[self.iperiod] = nbox
         self.log.vsim[self.iperiod] = self.mf6_rch[:]
+        self.log.fig[self.iperiod] = self.msw.fig
 
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
