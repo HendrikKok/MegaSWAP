@@ -387,3 +387,35 @@ PROCESSING MODEL CONNECTIONS
  NUMBER OF TIME STEPS = 1
  MULTIPLIER FOR DELT =     1.000
  INITIAL TIME STEP SIZE =   1.000000    
+
+ SLN_1 OUTER ITERATION SUMMARY
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                OUTER      INNER  BACKTRACK  BACKTRACK        INCOMING        OUTGOING                    STEP   MAXIMUM CHANGE MODEL-(CELLID) OR
+ OUTER ITERATION STEP       ITERATION  ITERATION       FLAG ITERATIONS        RESIDUAL        RESIDUAL  MAXIMUM CHANGE SUCCESS             MODEL-PACKAGE-(NUMBER)
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Backtracking                       1                     0          0  1.66383180E-02  1.66383180E-02                       *                                   
+ Model                              1          1                                                        2.11144795E-03                              1_GWF-(1,1,1)
+ Backtracking                       2                     0          0  7.80444545E-08  7.80444545E-08                       *                                   
+ Model                              2          1                                                        9.56718083E-09       *                      1_GWF-(1,1,1)
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+ 2 CALLS TO NUMERICAL SOLUTION IN TIME STEP 1 STRESS PERIOD 1
+ 2 TOTAL ITERATIONS
+ 
+    Solving:  Stress period:     2    Time step:     1
+ 
+1
+ STRESS PERIOD NO. 2, LENGTH =   1.000000    
+ ------------------------------------------
+ NUMBER OF TIME STEPS = 1
+ MULTIPLIER FOR DELT =     1.000
+ INITIAL TIME STEP SIZE =   1.000000    
+
+ SLN_1 OUTER ITERATION SUMMARY
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+                                OUTER      INNER  BACKTRACK  BACKTRACK        INCOMING        OUTGOING                    STEP   MAXIMUM CHANGE MODEL-(CELLID) OR
+ OUTER ITERATION STEP       ITERATION  ITERATION       FLAG ITERATIONS        RESIDUAL        RESIDUAL  MAXIMUM CHANGE SUCCESS             MODEL-PACKAGE-(NUMBER)
+ ----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Backtracking                       1                     0          0  1.45749022E-02  1.45749022E-02                       *                                   
+ Model                              1          1                                                        1.86768183E-03                              1_GWF-(1,1,1)
