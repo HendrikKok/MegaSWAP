@@ -79,19 +79,24 @@ def plot_results(log, megaswap, ntime_) -> None:
 
     ax["1"].plot(log.vsim, label="vsim")
     ax["1"].plot(megaswap.qrch[0:ntime_], label="neerslag")
-    ax["4"].plot(log.qmodf[:, 1], label="qmodf")
+    ax["4"].plot(log.qmodf[:, 4], label="qmodf")
     ax["1"].legend()
     ax["4"].legend()
+    
+    svat_per = pd.read_csv(r"d:\werkmap\prototype_metaswap\coupler_model\metaswap_a\msw\csv\svat_per_0000000001.csv")
+    msw_sc1 = svat_per["    sc1(m3/m2/m)"][0:ntime_]
 
     for ii in range(5):
         ax["2"].plot(log.sc1[:, ii], label=f"sc1 iter={ii}")
         # ax['4'].plot(log.sf_type[:,ii], label = 's-formulation')
     ax["2"].legend()
-
-    ax["3"].plot(log.mf6_head[:, 1], label="mf6-heads")
-    ax["3"].plot(log.msw_head[:, 1], linestyle="--", label="msw-heads")
-    ax["3"].plot(heads.isel(layer = 0, x = 0, y = 0).to_numpy()[0:ntime_], linestyle="--", label="mf6-heads_out")
-    ax["3"].legend()
+    ax["2"].plot(msw_sc1,'--', label="sc1_msw")
+    for iter in range(5):
+        ax["3"].plot(log.msw_head[:, iter], linestyle="--", label="msw-heads")
+        ax["3"].plot(log.mf6_head[:, iter], label="mf6-heads")
+    
+    #ax["3"].plot(heads.isel(layer = 0, x = 0, y = 0).to_numpy()[0:ntime_], linestyle="--", label="mf6-heads_out")
+    # ax["3"].legend()
 
     plt.tight_layout()
     plt.savefig(path + "exchange_vars_coupled.png")
@@ -129,6 +134,44 @@ def plot_results(log, megaswap, ntime_) -> None:
     #     plt.tight_layout()
     #     plt.savefig(path + f"exchange_vars_coupled_t{itime}.png")
     #     plt.close()
+    s_raw = np.loadtxt(r'd:\werkmap\prototype_metaswap\coupler_model\metaswap_a\fort.555', skiprows=1) 
+    s = s_raw[:,3][s_raw[:,1] == 2]
+    s_old = s_raw [:,4][s_raw[:,1] == 2]
+    qmodf = s_raw [:,-1][s_raw[:,1] == 2]
+    dsun = s_raw[:,8][s_raw[:,1] == 2]
+    figure, ax = plt.subplot_mosaic(
+        """
+        01
+        23
+        """
+    )
+    ax["0"].set_ylim(-0.2, -0.01)
+    ax["0"].plot(log.s[0:ntime_], label="s SSS")
+    ax["0"].plot(log.s_old[0:ntime_], label="s_old SSS")
+    ax["0"].legend()
+    ax["2"].plot((log.s[0:ntime_] - log.s_old[0:ntime_]), label="-d SSS")
+    ax["2"].plot(-log.qmodf[0:ntime_,0],'--', label="qmodf")
+    ax["2"].plot(log.ds[0:ntime_], label="ds SSS")
+    ax["2"].plot(log.vcor[0:ntime_], label="vcor")
+    ax["2"].legend()
+    ax["2"].set_ylim(-0.003, 0.003)
+
+
+    ax["1"].plot(s[0:ntime_], label="s")
+    ax["1"].plot(s_old[0:ntime_], label="s_old")
+    ax["1"].set_ylim(-0.2, -0.01)
+    ax["1"].legend()
+    ax["3"].plot(s[0:ntime_] - s_old[0:ntime_], label="d")
+    ax["3"].plot(-qmodf[0:ntime_], label="qmodf")
+    ax["3"].plot(dsun[0:ntime_], label="dsun")
+    ax["3"].legend()
+    ax["3"].set_ylim(-0.003, 0.003)
+
+
+
+    plt.tight_layout()
+    plt.savefig(path + "s.png")
+    plt.close()
 
 
 def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
@@ -191,8 +234,8 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
     # ax["1"].legend()
     figure, ax = plt.subplot_mosaic(
         """
-        2467
-        2467
+        24
+        67
         """
     )
     for iter in range(5):
@@ -221,7 +264,7 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
     
     ax["7"].plot(log.vsim[0:ntime_], label="vsim")
     ax["7"].plot(msw_vsim[0:ntime_],'--', label="vsim_msw")
-    
+    ax["7"].legend()
     plt.tight_layout()
     plt.savefig(path + "exchange_vars_coupled_combined.png")
     plt.close()

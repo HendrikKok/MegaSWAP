@@ -19,6 +19,10 @@ class Logging:
         self.sf_type = np.full((ntime, 2000), np.nan)
         self.ig = np.full(ntime, np.nan)
         self.fig = np.full(ntime, np.nan)
+        self.s = np.full(ntime, np.nan)
+        self.s_old = np.full(ntime, np.nan)
+        self.ds = np.full(ntime, np.nan)
+        self.vcor = np.full(ntime, np.nan)
 
 
 class Simulation:
@@ -103,15 +107,21 @@ class CoupledSimulation(Simulation):
             self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
             self.msw.finalise_iter(self.mf6_head[0])
+            
+            self.log.s[self.iperiod] = self.msw.storage_formulation.s
+            self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+            self.log.ds[self.iperiod] = self.msw.storage_formulation.ds
             self.log_exchange_vars(iter -1, nbox)
-            if has_converged: #  and iter > 4
+            
+            if has_converged: # and iter > 5:
                 break
         self.mf6.finalize_solve(1)
 
         # Finish timestep
         self.mf6.finalize_time_step()
         self.msw.finalise_timestep(self.mf6_head[0])
-        
+        self.log.msw_head[self.iperiod, 8] = self.msw.gwl_table
+        self.log.mf6_head[self.iperiod, 8] = self.mf6_head[0]
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
@@ -125,6 +135,7 @@ class CoupledSimulation(Simulation):
         self.log.nbox[self.iperiod] = nbox
         self.log.vsim[self.iperiod] = self.mf6_rch[:]
         self.log.fig[self.iperiod] = self.msw.fig
+        self.log.vcor[self.iperiod] = np.nan
 
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):

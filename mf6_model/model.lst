@@ -61,7 +61,7 @@ MODFLOW 6 compiler options: /nologo /O2 /fpp /warn:declarations /warn:unused
 Studio\2022\Community\VC\Tools\MSVC\14.40.33807\bin\HostX64\x64" /Qm64
 
 System command used to initiate simulation:
-d:\werkmap\LHM_coupling\.pixi\envs\default\python.exe d:\werkmap\prototype_metaswap\MegaSWAP\run.py
+d:\werkmap\LHM_coupling\.pixi\envs\default\python.exe -X frozen_modules=off c:\Users\kok_hk\.vscode\extensions\ms-python.debugpy-2024.12.0-win32-x64\bundled\libs\debugpy\adapter/../..\debugpy\launcher/../..\debugpy --connect 127.0.0.1:53396 --configure-qt none --adapter-access-token dcd9b574f1ea12eb07ea57abc4c15d166e33ef1e038ae2f8f9d557752b72430e D:\werkmap\prototype_metaswap\MegaSWAP\run.py
 
 MODFLOW was compiled using uniform precision.
 
@@ -246,4 +246,76 @@ start timestep kper="1" kstp="1" mode="normal"
      1         5       1       1   
  ----------------------------------
 
+
+ UBDSV1 SAVING           STO-SS ON UNIT   1018 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV1 SAVING     FLOW-JA-FACE ON UNIT   1018 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV06 SAVING         DATA-SAT IN MODEL MODEL            PACKAGE NPF             CONNECTED TO MODEL MODEL            PACKAGE NPF              ON UNIT   1018 AT TIME STEP      1, STRESS PERIOD      1
+ UBDSV06 SAVING              GHB IN MODEL MODEL            PACKAGE MODEL           CONNECTED TO MODEL MODEL            PACKAGE GHB-1            ON UNIT   1018 AT TIME STEP      1, STRESS PERIOD      1
+
+ GHB PACKAGE (GHB-1) FLOW RATES   PERIOD      1   STEP        1
+ -----------------------------------------------
+   NUMBER   CELLID                    RATE      
+ -----------------------------------------------
+     1      (5,1,1)              -1.62193063E-03
+ -----------------------------------------------
+
+
+
+
+ HEAD WILL BE SAVED ON UNIT 1017 AT END OF TIME STEP    1, STRESS PERIOD    1
+
+
+  VOLUME BUDGET FOR ENTIRE MODEL AT END OF TIME STEP    1, STRESS PERIOD   1
+  ---------------------------------------------------------------------------------------------------
+
+     CUMULATIVE VOLUME      L**3       RATES FOR THIS TIME STEP      L**3/T          PACKAGE NAME    
+     ------------------                 ------------------------                     ----------------
+
+           IN:                                      IN:
+           ---                                      ---
+              STO-SS =           0.0000                STO-SS =           0.0000     STORAGE                          
+                 WEL =           0.0000                   WEL =           0.0000     WEL-1                            
+                 GHB =           0.0000                   GHB =           0.0000     GHB-1                            
+                 RCH =       1.6638E-02                   RCH =       1.6638E-02     RCH-1                            
+
+            TOTAL IN =       1.6638E-02              TOTAL IN =       1.6638E-02
+
+          OUT:                                     OUT:
+          ----                                     ----
+              STO-SS =       1.5016E-02                STO-SS =       1.5016E-02     STORAGE                          
+                 WEL =           0.0000                   WEL =           0.0000     WEL-1                            
+                 GHB =       1.6219E-03                   GHB =       1.6219E-03     GHB-1                            
+                 RCH =           0.0000                   RCH =           0.0000     RCH-1                            
+
+           TOTAL OUT =       1.6638E-02             TOTAL OUT =       1.6638E-02
+
+            IN - OUT =       2.6549E-09              IN - OUT =       2.6549E-09
+
+ PERCENT DISCREPANCY =           0.00     PERCENT DISCREPANCY =           0.00
+
+
+
+
+         TIME SUMMARY AT END OF TIME STEP    1 IN STRESS PERIOD    1
+                    SECONDS     MINUTES      HOURS       DAYS        YEARS
+                    -----------------------------------------------------------
+   TIME STEP LENGTH  86400.      1440.0      24.000      1.0000     2.73785E-03
+ STRESS PERIOD TIME  86400.      1440.0      24.000      1.0000     2.73785E-03
+         TOTAL TIME  86400.      1440.0      24.000      1.0000     2.73785E-03
+
+
+end timestep
+
+
+start timestep kper="2" kstp="1" mode="normal"
+
+
+ END OF FILE DETECTED IN OUTPUT CONTROL.
+ CURRENT OUTPUT CONTROL SETTINGS WILL BE 
+ REPEATED UNTIL THE END OF THE SIMULATION.
+
+ OUTPUT CONTROL FOR STRESS PERIOD 2 IS REPEATED USING SETTINGS FROM A PREVIOUS STRESS PERIOD.
+
+
+ STRESS PERIOD 2 IS TRANSIENT
 

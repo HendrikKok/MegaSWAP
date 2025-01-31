@@ -13,7 +13,7 @@ msw_parameters = {
     "qrch": qrch,
     "surface_elevation": 0.0,
     "initial_gwl": -3.0,
-    "initial_phead": -1.5,  # -(0 - -6.9)
+    "initial_phead": -1.513561,  # -(0 - -6.9)
     "dtgw": 1.0,
 }
 
@@ -23,7 +23,9 @@ mf6_parameters = {
     "model_name": "model",
 }
 
-ntime = 50
+# che k s_mf6
+
+ntime = 80
 megaswap, log = run_coupled_model(ntime, mf6_parameters, msw_parameters)
 
 plot_results(log, megaswap, ntime)
