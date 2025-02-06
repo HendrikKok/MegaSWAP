@@ -106,22 +106,16 @@ class CoupledSimulation(Simulation):
             sc1, nbox, self.log.sf_type[self.iperiod,0] = self.msw.do_iter(self.mf6_head[0], iter)
             self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
-            self.msw.finalise_iter(self.mf6_head[0])
-            
-            self.log.s[self.iperiod] = self.msw.storage_formulation.s
-            self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
-            self.log.ds[self.iperiod] = self.msw.storage_formulation.ds
+            self.msw.finalise_iter(self.mf6_head[0], iter)
             self.log_exchange_vars(iter -1, nbox)
-            
             if has_converged: # and iter > 5:
                 break
         self.mf6.finalize_solve(1)
 
         # Finish timestep
         self.mf6.finalize_time_step()
-        self.msw.finalise_timestep(self.mf6_head[0])
-        self.log.msw_head[self.iperiod, 8] = self.msw.gwl_table
-        self.log.mf6_head[self.iperiod, 8] = self.mf6_head[0]
+        self.msw.finalise_timestep()
+        self.log_exchange_vars(99,nbox)
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
@@ -136,7 +130,9 @@ class CoupledSimulation(Simulation):
         self.log.vsim[self.iperiod] = self.mf6_rch[:]
         self.log.fig[self.iperiod] = self.msw.fig
         self.log.vcor[self.iperiod] = np.nan
-
+        self.log.s[self.iperiod] = self.msw.storage_formulation.s
+        self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+        self.log.ds[self.iperiod] = self.msw.storage_formulation.ds
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     wdir = mf6_parameters["workdir"]

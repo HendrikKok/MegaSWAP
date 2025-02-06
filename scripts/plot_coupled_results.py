@@ -79,24 +79,29 @@ def plot_results(log, megaswap, ntime_) -> None:
 
     ax["1"].plot(log.vsim, label="vsim")
     ax["1"].plot(megaswap.qrch[0:ntime_], label="neerslag")
-    ax["4"].plot(log.qmodf[:, 4], label="qmodf")
+    for iter in range(5):
+        ax["4"].plot(log.qmodf[:, iter], label="qmodf")
     ax["1"].legend()
     ax["4"].legend()
     
     svat_per = pd.read_csv(r"d:\werkmap\prototype_metaswap\coupler_model\metaswap_a\msw\csv\svat_per_0000000001.csv")
     msw_sc1 = svat_per["    sc1(m3/m2/m)"][0:ntime_]
 
-    for ii in range(5):
-        ax["2"].plot(log.sc1[:, ii], label=f"sc1 iter={ii}")
+    # for ii in range(5):
+    ii = 99
+    ax["2"].plot(log.sc1[:, ii], label=f"sc1 iter={ii}")
         # ax['4'].plot(log.sf_type[:,ii], label = 's-formulation')
     ax["2"].legend()
     ax["2"].plot(msw_sc1,'--', label="sc1_msw")
+    
     for iter in range(5):
-        ax["3"].plot(log.msw_head[:, iter], linestyle="--", label="msw-heads")
-        ax["3"].plot(log.mf6_head[:, iter], label="mf6-heads")
+        ax["3"].plot(log.msw_head[:, iter], color = 'grey')
+    iter = 99
+    ax["3"].plot(log.msw_head[:, iter], label="msw-heads")
+    ax["3"].plot(log.mf6_head[:, iter], label="mf6-heads", linestyle="--",)
     
     #ax["3"].plot(heads.isel(layer = 0, x = 0, y = 0).to_numpy()[0:ntime_], linestyle="--", label="mf6-heads_out")
-    # ax["3"].legend()
+    ax["3"].legend()
 
     plt.tight_layout()
     plt.savefig(path + "exchange_vars_coupled.png")
@@ -179,9 +184,10 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
     svat_per = pd.read_csv(model_dir + r"\metaswap_a\msw\csv\svat_per_0000000001.csv")
     msw_sc1 = svat_per["    sc1(m3/m2/m)"][0:ntime_]
     msw_qmodf = (svat_per["       qmodf(mm)"] / 1000)[0:ntime_]  # to m
-    ntime = 117
-    phead_raw = np.loadtxt(model_dir + r"\metaswap_a\fort.112", skiprows=0)
-    msw_phead = phead_raw[:,3].ravel().reshape((ntime,18))[0:ntime_,:]
+    
+    
+    phead_raw = np.loadtxt(model_dir + r"\metaswap_a\fort.117", skiprows=0)
+    msw_phead = phead_raw
     
     grb_path = model_dir + r"\mf6_model\model.dis.grb" 
     hds_path = model_dir + r"\mf6_model\flow.hds" 
@@ -214,7 +220,7 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
     )
     for ibox in range(max_box):
         ax["0"].plot(phead_log[:, ibox][0:ntime_], label=f"h_{ibox}")
-        ax["0"].plot(msw_phead[:, ibox],'--', label=f"h_msw_{ibox}")
+        ax["0"].plot(msw_phead[:, ibox][0:ntime_],'--', label=f"h_msw_{ibox}")
     ax["0"].legend()
     
 
@@ -238,13 +244,13 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
         67
         """
     )
-    for iter in range(5):
-        ax["4"].plot(log.qmodf[0:ntime_, iter], label=f"qmodf_msw{iter}")
+    # for iter in range(5):
+    ax["4"].plot(log.qmodf[0:ntime_, 99], label="qmodf")
     ax["4"].plot(msw_qmodf,'--', label="qmodf_msw")
     ax["4"].legend()
 
-    for iter in range(5):
-       ax["2"].plot(log.sc1[0:ntime_, iter], label=f"sc1_msw{iter}")
+    # for iter in range(5):
+    ax["2"].plot(log.sc1[0:ntime_, 99], label="sc1")
     ax["2"].plot(msw_sc1,'--', label="sc1_msw")
     ax["2"].legend()
 
@@ -252,10 +258,10 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
     #    ax["6"].plot(log.mf6_head[0:ntime_, iter], label=f"heads{iter}")
     # ax["6"].legend()
     
-    for iter in range(5):
+    #for iter in range(5):
        # ax["7"].plot(log.msw_head[0:ntime_, iter], label="heads")
-       ax["6"].plot(log.mf6_head[0:ntime_, iter], label=f"heads{iter}")
-       ax["6"].plot(msw_heads_mf6[0:ntime], '--' ,label="heads_msw")
+    ax["6"].plot(log.mf6_head[0:ntime_, 99], label="heads")
+    ax["6"].plot(msw_heads_mf6[0:ntime], '--' ,label="heads_msw")
        
     ax["6"].legend()
 

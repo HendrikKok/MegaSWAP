@@ -22,19 +22,24 @@ def head2pf(phead: np.ndarray) -> np.ndarray:
     return np.log10(-m2cm * phead)
 
 
-def qmr2ip(qmr, ig, sigmabtb: xr.DataArray, qmrtb: xr.DataArray) -> tuple[int, float]:
+def qmr2ip(qmr, ig, ip_indexes: xr.DataArray, qmrtb: xr.DataArray) -> tuple[int, float]:
     qmr1d = qmrtb.sel(ig=ig)
     sorter = np.argsort(qmr1d)
     ip_qmr1d = sorter[np.searchsorted(qmr1d, qmr, sorter=sorter)].item()
-    ip = qmr1d.ip[ip_qmr1d].item()
-    if ip >= sigmabtb.ip.max():
+    ip = qmr1d.ip[sorter[ip_qmr1d]].item()
+    if ip >= ip_indexes.max():
         print("out of bounds..")
-        ip = sigmabtb.ip.max().item()
+        ip = ip_indexes.max().item()
         fip = 0
         return ip, fip
-    fip = (qmr - qmr1d.sel(ip=ip - 1).item()) / (
-        qmr1d.sel(ip=ip).item() - qmr1d.sel(ip=ip - 1).item()
+    fip = (qmr - qmr1d.sel(ip=ip).item()) / (
+        qmr1d.sel(ip=ip+1).item() - qmr1d.sel(ip=ip).item()
     )
+    if fip < 0.0: # bacause of sorter action
+        ip -= 1 
+        fip = (qmr - qmr1d.sel(ip=ip).item()) / (
+            qmr1d.sel(ip=ip+1).item() - qmr1d.sel(ip=ip).item()
+        )
     return ip, fip
 
 
@@ -236,7 +241,6 @@ class DataBase:
         return sgwln.item()
 
     def create_storage_tabel_box(self, ibox, ig, igold, prz, dpgwold, qmv, dtgw: float):
-        sigmabtb = self.svtb.sel(ib=ibox) - dtgw * self.qmrtb
         iprz, fiprz = phead_to_index(prz, self.ddpptb, self.nuip)
         # current situation ('from')
         peq = (
@@ -250,14 +254,14 @@ class DataBase:
         # only if the current situation does not have plocking
         # only if the 'to' situation is percolation
         # only if the current groundwater level is above the bottom of the box
-        if ig > igold and prz > peqtb:
+        if ig > igold and prz > peqtb and dpgwold < -self.box_bottom[ibox]:
             if dpgwold < 0.05 or prz < peq:
-                # set to equilibrium value; from cap-rise to percolation
+                # CASE 1: set to equilibrium value; from cap-rise to percolation
                 pnew = peqtb
                 ip, fip = phead_to_index(pnew, self.ddpptb, self.nuip)
                 ip, fip = self.ip_in_bounds(ip, fip)
             elif prz > peq:
-                # semi-implicit scheme; from percolation to percolation
+                # CASE 2: semi-implicit scheme; from percolation to percolation
                 ip, fip = self.ip_in_bounds(iprz, fiprz)
                 qmvtp = self.qmrtb.sel(ig=ig, ip=ip).item() + fip * (
                     self.qmrtb.sel(ig=ig, ip=ip + 1).item()
@@ -267,11 +271,14 @@ class DataBase:
                 if qmvtp < 0.0 and qmvtp < qmv[ibox]:
                     qmvtp = qmvtp * 0.5 + qmv[ibox] * 0.5
                 # from qmvtp find phead and indexes
-                ip, fip = qmr2ip(qmvtp, ig, sigmabtb, self.qmrtb)
+                ip, fip = qmr2ip(qmvtp, ig, self.svtb.ip, self.qmrtb)
                 ip, fip = self.ip_in_bounds(ip, fip)
-                pnewtp = self.ptb["value"][ip] + fip * (
-                    self.ptb["value"][ip + 1] - self.ptb["value"][ip]
-                )
+                if ip < 0:
+                    pnewtp = self.ptb["value"][ip] + fip * (
+                        self.ptb["value"][ip + 1] - self.ptb["value"][ip]
+                    )
+                else:
+                    pnewtp = -cm2m*(10**((ip+fip)*self.ddpptb))
                 pnew = prz - (self.dpgwtb["value"][ig] - dpgwold)
                 if pnew > pnewtp:
                     # update index based on maximum dragdown
@@ -282,6 +289,7 @@ class DataBase:
             else:
                 ip, fip = self.ip_in_bounds(iprz, fiprz)
         else:
+            # defaults
             ip, fip = self.ip_in_bounds(iprz, fiprz)
         return self.svtb.sel(ib=ibox, ig=ig, ip=ip).item() + fip * (
             self.svtb.sel(ib=ibox, ig=ig, ip=ip + 1).item()
@@ -345,7 +353,7 @@ class DataBase:
         return ip, fip
 
     def sv2ip(self, sv, ig, fig, ibox: int, dtgw: float) -> tuple[int, float]:
-        sigmabtb = self.svtb.sel(ib=ibox) - dtgw * self.qmrtb
+        sigmabtb = self.svtb.sel(ib=ibox) # - dtgw * self.qmrtb
         sigma1d = sigmabtb.sel(ig=ig) + fig * (
             sigmabtb.sel(ig=ig + 1) - sigmabtb.sel(ig=ig)
         )
@@ -389,22 +397,6 @@ class DataBase:
         mask = self.dpgwtb["value"].loc[ig] >= -self.box_top
         return np.arange(self.box_top.size)[mask]
 
-class Variations:
-    def __init__(self):
-        self.new = None
-        self.old = None
-        
-    def update(self, new) -> None:
-        self.old = copy.copy(self.new)
-        self.new = new
-        
-
-class SharedStates:
-    
-    def __init__(self):
-        self.gwl_table = Variations(None)
-        
-    
 
 class StorageFormulation:
 
@@ -717,7 +709,7 @@ class UnsaturatedZone:
             ig, ig, ig_old, prz, lvgw_old, non_submerged_boxes, self.qmv, self.dtgw
         )
         self.storage_formulation.add_storage_tabel_element(
-            ig + 1, ig, ig_old, prz, lvgw_old, non_submerged_boxes, self.qmv, self.dtgw
+            ig + 1, ig + 1, ig_old, prz, lvgw_old, non_submerged_boxes, self.qmv, self.dtgw
         )
         dif = self.storage_formulation.storage_tabel[ig + 1] - sarg
         ig = None
@@ -769,25 +761,22 @@ class UnsaturatedZone:
         )[0].item() #, ig, fig
         
 
-    def finalize(self, ig, fig, gwl_table, gwl_table_old):
+    def finalize(self, ig, fig, gwl_table, gwl_table_old, non_submerged_boxes):
         # based on msw1bd
         # update sv based on new pressure head
-        ig_old, _ = self.database.gwl_to_index(gwl_table_old)
+        ig_table_old, _ = self.database.gwl_to_index(gwl_table_old)
         ibmax = self.database.nbox - 1  # 0-based
         for ibox in range(ibmax):
             ig_local = self.database.get_max_ig(ig, ibox, self.ip[ibox])
-            # s_ig = self.database.create_storage_tabel_box(ibox, ig_local, ig_old, self.phead[ibox], self.database.mv - self.gwl_table, self.qmv,self.dtgw)
-            # s_ig1 = self.database.create_storage_tabel_box(ibox, ig_local + 1,ig_old, self.phead[ibox], self.database.mv - self.gwl_table, self.qmv,self.dtgw)
+            # s_ig = self.database.create_storage_tabel_box(ibox, ig_local, ig_table_old, self.phead[ibox], self.database.mv - self.gwl_table, self.qmv,self.dtgw)
+            # s_ig1 = self.database.create_storage_tabel_box(ibox, ig_local + 1,ig_table_old, self.phead[ibox], self.database.mv - self.gwl_table, self.qmv,self.dtgw)
             # self.sv[ibox] = s_ig + fig *(s_ig1 - s_ig)
             self.sv[ibox] = get_sv(
                 ig_local, fig, self.ip[ibox], self.fip[ibox], self.database.svtb, ibox
             )
-            # self.sv[ibox] = get_sv(
-            #     ig_local, fig, self.ip[ibox], self.fip[ibox], self.database.svtb, ibox
-            # )
         # update qmv's
         self.qmv[:] = 0.0
-        self.phead[:] = 0.0
+        # self.phead[:] = 0.0
         self.qmv[ibmax - 1] = -(self.sv[ibmax] - self.sv_old[ibmax]) / self.dtgw + self.storage_formulation.qmodf
         if self.qmv[0] > 0.0:
             raise ValueError("inflow box 1 from bottom")
@@ -804,12 +793,15 @@ class UnsaturatedZone:
             self.ip[ibox], self.fip[ibox] = self.database.sv2ip(
                 self.sv[ibox], ig_local, fig, ibox, self.dtgw
             )
-            self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[
-                ibox
-            ] * (
-                self.database.ptb["value"][self.ip[ibox] + 1]
-                - self.database.ptb["value"][self.ip[ibox]]
-            )
+            if self.ip[ibox] < 0:
+                self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[
+                    ibox
+                ] * (
+                    self.database.ptb["value"][self.ip[ibox] + 1]
+                    - self.database.ptb["value"][self.ip[ibox]]
+                )
+            else:
+                self.phead[ibox] = -cm2m*(10**((self.ip[ibox]+self.fip[ibox])*self.database.ddpptb))
         return self.ip, self.fip, self.phead
 
     def save_to_old(self) -> None:
@@ -862,13 +854,11 @@ class MegaSwap:
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
         if self.ig_table_old is None:
             self.ig_table_old = copy.copy(self.ig)
-        # s_old = self.storage_formulation.get_s(self.ig,self.fig,self.ig_table_old,self.unsaturated_zone.phead,self.gwl_table_old, self.non_submerged_boxes, self.unsaturated_zone.qmv,self.dtgw)
         self.rch_time = self.qrch[itime]
         s , s_old , self.phead, self.gwl_table = self.unsaturated_zone.update(
             self.ig, self.fig, self.qrch[itime], self.gwl_table, self.gwl_table_old
         )
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
-
         self.storage_formulation.s = s_old +  self.rch_time + self.storage_formulation.qmodf   # self.rch_time +
         self.storage_formulation.s_old = s_old
         self.storage_formulation.ds = s - s_old
@@ -883,7 +873,7 @@ class MegaSwap:
         return self.vsim
 
     def do_iter(self, gwl_mf6: float, iter: int) -> float:
-        # self.ig, _ = self.unsaturated_zone.database.gwl_to_index(self.gwl_table)
+        #self.ig, _ = self.unsaturated_zone.database.gwl_to_index(self.gwl_table)
         ig_mf6, fig_mf6 = self.unsaturated_zone.database.gwl_to_index(self.gwl_mf6)
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(self.gwl_table)
         self.sc1, sf_type = self.storage_formulation.update(
@@ -902,7 +892,7 @@ class MegaSwap:
         )
         return copy.copy(self.sc1), self.non_submerged_boxes.size, sf_type
 
-    def finalise_iter(self, gwl_mf6) -> None:
+    def finalise_iter(self, gwl_mf6, iter) -> None:
         self.gwl_mf6 = gwl_mf6
         self.storage_formulation.finalise_update(
                 self.gwl_mf6,
@@ -917,22 +907,22 @@ class MegaSwap:
             )
         self.storage_formulation.s = self.storage_formulation.s_old  + self.rch_time + self.storage_formulation.qmodf 
         self.unsaturated_zone.gwl_table = self.get_gwl()
-        self.gwl_table = self.unsaturated_zone.gwl_table
+        self.gwl_table = copy.copy(self.unsaturated_zone.gwl_table)
         self.storage_formulation.finalise()
 
-    def finalise_timestep(self, gwl_mf6) -> None:
+    def finalise_timestep(self) -> None:
         ig, fig = self.database.gwl_to_index(self.gwl_table) # is dit een update?
-        ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, self.gwl_table, self.gwl_table_old)
+        ip, fip, self.phead = self.unsaturated_zone.finalize(ig, fig, self.gwl_table, self.gwl_table_old, self.non_submerged_boxes)
         self.storage_formulation.finalise()
         self.storage_formulation.s = summed_sv(self.unsaturated_zone.sv)
-        self.save_to_old(ig, ip, fip, gwl_mf6)
+        self.save_to_old(ig, ip, fip)
 
-    def save_to_old(self, ig, ip, fip, gwl_mf6) -> None:
+    def save_to_old(self, ig, ip, fip) -> None:
         self.gwl_table_old = np.copy(self.gwl_table)
         self.ig_table_old = np.copy(ig)
         self.ip_old, self.fip_old = np.copy(ip), np.copy(fip)
         self.storage_formulation.s_old = np.copy(self.storage_formulation.s) # was turned off
-        self.gwl_mf6_old = copy.copy(gwl_mf6)
+        self.gwl_mf6_old = copy.copy(self.gwl_mf6)
         self.phead_old = np.copy(self.phead)
         self.unsaturated_zone.save_to_old()
         # self.s_mf6_old = copy.copy(self.s_mf6)
