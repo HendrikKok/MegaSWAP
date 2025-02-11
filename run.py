@@ -22,7 +22,7 @@ mf6_parameters = {
 
 # chek s_mf6
 
-ntime = 70
+ntime = 120
 megaswap, log = run_coupled_model(ntime, mf6_parameters, msw_parameters)
 
 plot_results(log, megaswap, ntime)

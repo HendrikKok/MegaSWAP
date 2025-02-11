@@ -185,10 +185,10 @@ class DataBase:
         mask =  dpgw >= -self.box_top
         return np.arange(self.box_top.size)[mask]
         
-    def get_phead_index_estimate(self, ig, ig_old, ibox, peq, peq_table, dpgw_old):
+    def get_phead_index_estimate(self, ig, ibox, peq, peq_table):
         iprz, fiprz = phead_to_index(self.phead[ibox], self.ddpptb, self.nuip)
-        if ig > ig_old and self.phead[ibox] > peq_table and dpgw_old < -self.box_bottom[ibox]:
-            if dpgw_old < 0.05 or self.phead[ibox] < peq:
+        if ig > self.ig_table_old and self.phead[ibox] > peq_table and self.dpgw_table_old < -self.box_bottom[ibox]:
+            if self.dpgw_table_old < 0.05 or self.phead[ibox] < peq:
                 # CASE 1: set to equilibrium value; from cap-rise to percolation
                 pnew = peq_table
                 ip, fip = phead_to_index(pnew, self.ddpptb, self.nuip)
@@ -212,7 +212,7 @@ class DataBase:
                     )
                 else:
                     pnewtp = -cm2m*(10**((ip+fip)*self.ddpptb))
-                pnew = self.phead[ibox] - (self.dpgwtb["value"][ig] - dpgw_old)
+                pnew = self.phead[ibox] - (self.dpgwtb["value"][ig] - self.dpgw_table_old)
                 if pnew > pnewtp:
                     # update index based on maximum dragdown
                     ip, fip = phead_to_index(pnew, self.ddpptb, self.nuip)
@@ -227,44 +227,34 @@ class DataBase:
             return self.ip_in_bounds(iprz, fiprz)
 
     def create_storage_tabel_boxes(
-        self, ig, dpgw_old: float | None = None, ig_old: int | None = None
+        self, ig
     ):
         sgwln = 0.0
-        if dpgw_old is None:
-            dpgw_old = self.dpgw_table_old
-            ig_old = self.ig_table_old
         for ibox in self.non_submerged_boxes:
             sgwln += self.create_storage_tabel_box(
-                ibox, ig, ig_old, dpgw_old
+                ibox, ig
             )
         return sgwln.item()
 
-    def create_storage_tabel_box(self, ibox, ig, ig_old, dpgw_old):
+    def create_storage_tabel_box(self, ibox, ig):
         #  equilibrium pressure head for the current groundwater level
         peq = (
-            -dpgw_old + 0.5 * self.rootzone_dikte
+            -self.dpgw_table_old + 0.5 * self.rootzone_dikte
         ) # current situation ('from')
         
         peq_table = (
             -self.dpgwtb["value"][ig] + 0.5 * self.rootzone_dikte
         )  # new situation ('to')
         
-        ip, fip = self.get_phead_index_estimate(ig, ig_old, ibox, peq, peq_table, dpgw_old)
+        ip, fip = self.get_phead_index_estimate(ig, ibox, peq, peq_table)
         return self.svtb.sel(ib=ibox, ig=ig, ip=ip).item() + fip * (
             self.svtb.sel(ib=ibox, ig=ig, ip=ip + 1).item()
             - self.svtb.sel(ib=ibox, ig=ig, ip=ip).item()
         )
         
-    def get_storage_from_gwl_index_table(self, ig, fig):
+    def get_storage_from_gwl_index(self, ig, fig):
         self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig)
         self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1)
-        return self.storage_tabel[ig] + fig * (
-            self.storage_tabel[ig + 1] - self.storage_tabel[ig]
-        )
-        
-    def get_storage_from_gwl_index_mf6(self, ig, fig):
-        self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig, dpgw_old = self.dpgw_mf6_old, ig_old = self.ig_mf6_old)
-        self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1, dpgw_old = self.dpgw_mf6_old, ig_old = self.ig_mf6_old)
         return self.storage_tabel[ig] + fig * (
             self.storage_tabel[ig + 1] - self.storage_tabel[ig]
         )
@@ -304,19 +294,9 @@ class DataBase:
             )
         )[0].item(), ig, fig
         
-    def get_sc1_from_gwl_index_table(self, ig):
+    def get_sc1_from_gwl_index(self, ig):
         self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig)
         self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1)
-        return (
-            self.storage_tabel[ig] - self.storage_tabel[ig + 1]
-        ) / (
-            self.dpgwtb.loc[ig + 1]
-            - self.dpgwtb.loc[ig]
-        )
-        
-    def get_sc1_from_gwl_index_mf6(self, ig):
-        self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig, dpgw_old = self.dpgw_mf6_old, ig_old = self.ig_mf6_old)
-        self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1, dpgw_old = self.dpgw_mf6_old, ig_old = self.ig_mf6_old)
         return (
             self.storage_tabel[ig] - self.storage_tabel[ig + 1]
         ) / (
@@ -332,5 +312,3 @@ class DataBase:
     def update_saturated_variables(self, gwl_table_old, gwl_mf6_old):
         self.dpgw_table_old = self.mv - gwl_table_old
         self.ig_table_old, _ = self.gwl_to_index(gwl_table_old)
-        self.ig_mf6_old, _ = self.gwl_to_index(gwl_mf6_old)
-        self.dpgw_mf6_old = self.mv - gwl_mf6_old

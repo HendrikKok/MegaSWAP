@@ -22,7 +22,7 @@ and distribution information.
  
  MODFLOW runs in SEQUENTIAL mode
  
- Run start date and time (yyyy/mm/dd hh:mm:ss): 2025/02/11 13:56:39
+ Run start date and time (yyyy/mm/dd hh:mm:ss): 2025/02/11 14:54:09
  
  Writing simulation list file: mfsim.lst
  Using Simulation name file: mfsim.nam
@@ -97,8 +97,58 @@ and distribution information.
     Solving:  Stress period:    68    Time step:     1
     Solving:  Stress period:    69    Time step:     1
     Solving:  Stress period:    70    Time step:     1
+    Solving:  Stress period:    71    Time step:     1
+    Solving:  Stress period:    72    Time step:     1
+    Solving:  Stress period:    73    Time step:     1
+    Solving:  Stress period:    74    Time step:     1
+    Solving:  Stress period:    75    Time step:     1
+    Solving:  Stress period:    76    Time step:     1
+    Solving:  Stress period:    77    Time step:     1
+    Solving:  Stress period:    78    Time step:     1
+    Solving:  Stress period:    79    Time step:     1
+    Solving:  Stress period:    80    Time step:     1
+    Solving:  Stress period:    81    Time step:     1
+    Solving:  Stress period:    82    Time step:     1
+    Solving:  Stress period:    83    Time step:     1
+    Solving:  Stress period:    84    Time step:     1
+    Solving:  Stress period:    85    Time step:     1
+    Solving:  Stress period:    86    Time step:     1
+    Solving:  Stress period:    87    Time step:     1
+    Solving:  Stress period:    88    Time step:     1
+    Solving:  Stress period:    89    Time step:     1
+    Solving:  Stress period:    90    Time step:     1
+    Solving:  Stress period:    91    Time step:     1
+    Solving:  Stress period:    92    Time step:     1
+    Solving:  Stress period:    93    Time step:     1
+    Solving:  Stress period:    94    Time step:     1
+    Solving:  Stress period:    95    Time step:     1
+    Solving:  Stress period:    96    Time step:     1
+    Solving:  Stress period:    97    Time step:     1
+    Solving:  Stress period:    98    Time step:     1
+    Solving:  Stress period:    99    Time step:     1
+    Solving:  Stress period:   100    Time step:     1
+    Solving:  Stress period:   101    Time step:     1
+    Solving:  Stress period:   102    Time step:     1
+    Solving:  Stress period:   103    Time step:     1
+    Solving:  Stress period:   104    Time step:     1
+    Solving:  Stress period:   105    Time step:     1
+    Solving:  Stress period:   106    Time step:     1
+    Solving:  Stress period:   107    Time step:     1
+    Solving:  Stress period:   108    Time step:     1
+    Solving:  Stress period:   109    Time step:     1
+    Solving:  Stress period:   110    Time step:     1
+    Solving:  Stress period:   111    Time step:     1
+    Solving:  Stress period:   112    Time step:     1
+    Solving:  Stress period:   113    Time step:     1
+    Solving:  Stress period:   114    Time step:     1
+    Solving:  Stress period:   115    Time step:     1
+    Solving:  Stress period:   116    Time step:     1
+    Solving:  Stress period:   117    Time step:     1
+    Solving:  Stress period:   118    Time step:     1
+    Solving:  Stress period:   119    Time step:     1
+    Solving:  Stress period:   120    Time step:     1
  
- Run end date and time (yyyy/mm/dd hh:mm:ss): 2025/02/11 13:56:48
- Elapsed run time:  9.263 Seconds
+ Run end date and time (yyyy/mm/dd hh:mm:ss): 2025/02/11 14:54:22
+ Elapsed run time: 13.935 Seconds
  
  Normal termination of simulation.

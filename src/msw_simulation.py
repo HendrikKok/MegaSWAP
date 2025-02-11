@@ -2,6 +2,7 @@ import numpy as np
 from src.database import DataBase
 from src.storage_formulation import StorageFormulation
 from src.unsaturated_zone import UnsaturatedZone
+from src.utils import summed_sv
 
 class MegaSwap:
 
@@ -31,8 +32,8 @@ class MegaSwap:
         self.gwl_mf6_old = parameters["initial_gwl"]
         self.itime = 0
         self.storage_formulation.initialize(
-            self.unsaturated_zone.sv.sum(),
-            self.unsaturated_zone.sv_old.sum(),
+            summed_sv(self.unsaturated_zone.sv),
+            summed_sv(self.unsaturated_zone.sv_old),
             inital_gwl = parameters["initial_gwl"]
         )
         self.ds = 0.0  # change of storage in unsaturated zone after unsaturated_zone.update()
