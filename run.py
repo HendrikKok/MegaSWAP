@@ -1,7 +1,4 @@
 import numpy as np
-import imod
-import matplotlib.pyplot as plt
-
 from src.mf6_simulation import run_coupled_model
 from scripts.plot_coupled_results import plot_results, plot_combined_results
 
@@ -23,9 +20,9 @@ mf6_parameters = {
     "model_name": "model",
 }
 
-# che k s_mf6
+# chek s_mf6
 
-ntime = 120
+ntime = 70
 megaswap, log = run_coupled_model(ntime, mf6_parameters, msw_parameters)
 
 plot_results(log, megaswap, ntime)

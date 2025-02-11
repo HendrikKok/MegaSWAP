@@ -1,11 +1,6 @@
 import numpy as np
 from xmipy import XmiWrapper
-from src.megaswap_simulation import MegaSwap
-# Type hints
-FloatArray = np.ndarray
-IntArray = np.ndarray
-BoolArray = np.ndarray
-
+from src.msw_simulation import MegaSwap
 
 class Logging:
     def __init__(self, ntime: int):
@@ -37,7 +32,6 @@ class Simulation:
         self.max_iter = self.mf6.get_value_ptr("SLN_1/MXITER")[0]
         shape = np.zeros(1, dtype=np.int32)
         self.ncell = self.mf6.get_grid_shape(1, shape)[0]
-        # (f"Initialized model with {self.ncell} cells")
 
     def do_iter(self, sol_id: int) -> bool:
         """Execute a single iteration"""
@@ -45,8 +39,6 @@ class Simulation:
         return has_converged
 
     def update(self):
-        # We cannot set the timestep (yet) in Modflow
-        # -> set to the (dummy) value 0.0 for now
         self.mf6.prepare_time_step(0.0)
         self.mf6.prepare_solve(1)
         # Convergence loop
@@ -55,7 +47,6 @@ class Simulation:
             if has_converged:
                 break
         self.mf6.finalize_solve(1)
-        # Finish timestep
         self.mf6.finalize_time_step()
         current_time = self.mf6.get_current_time()
         return current_time
@@ -72,7 +63,6 @@ class Simulation:
         iperiod = 0
         _, current_time, end_time = self.get_times()
         while (current_time < end_time) and iperiod < periods:
-            # print(f"MF6 starting period {iperiod}")
             current_time = self.update()
             iperiod += 1
         print(f"Simulation terminated normally for {periods} periods")
@@ -98,41 +88,38 @@ class CoupledSimulation(Simulation):
     def update(self):
         self.mf6.prepare_time_step(0.0)
         vsim = self.msw.prepare_timestep(self.iperiod)
-        self.mf6_rch[:] = vsim  # should be in m/d
+        self.mf6_rch[:] = vsim
+        
         self.mf6.prepare_solve(1)
-
         # Convergence loop
         for iter in range(1, self.max_iter + 1):
-            sc1, nbox, self.log.sf_type[self.iperiod,0] = self.msw.do_iter(self.mf6_head[0], iter)
+            sc1 = self.msw.do_iter(iter)
             self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
-            self.msw.finalise_iter(self.mf6_head[0], iter)
+            self.msw.finalise_iter(self.mf6_head[0])
+            nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
             self.log_exchange_vars(iter -1, nbox)
-            if has_converged: # and iter > 5:
+            if has_converged:
                 break
         self.mf6.finalize_solve(1)
 
-        # Finish timestep
         self.mf6.finalize_time_step()
         self.msw.finalise_timestep()
-        self.log_exchange_vars(99,nbox)
+        self.log_exchange_vars(99, nbox)
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
 
     def log_exchange_vars(self, iter, nbox) -> None:
         self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
-        self.log.msw_head[self.iperiod, iter] = self.msw.gwl_table
+        self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
         self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
         self.log.qmodf[self.iperiod, iter] = self.msw.storage_formulation.qmodf
-        self.log.phead[self.iperiod, :] = self.msw.phead
+        self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
         self.log.nbox[self.iperiod] = nbox
         self.log.vsim[self.iperiod] = self.mf6_rch[:]
-        self.log.fig[self.iperiod] = self.msw.fig
-        self.log.vcor[self.iperiod] = np.nan
         self.log.s[self.iperiod] = self.msw.storage_formulation.s
         self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
-        self.log.ds[self.iperiod] = self.msw.storage_formulation.ds
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     wdir = mf6_parameters["workdir"]
