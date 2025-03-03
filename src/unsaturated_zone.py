@@ -33,10 +33,14 @@ class UnsaturatedZone:
         self.qmv = np.zeros(self.database.nbox)
         for ibox in range(self.database.nbox):
             self.qmv[ibox] = init_qmv(self.ig_table, self.fig_table, self.ip[ibox], self.fip[ibox],self.database.qmrtb)
+        self.qmv_old = np.copy(self.qmv)                                            # bottom flux per box, for t -1
 
-    def update(self, qrch, gwl_table):
+    def update(self, qrch, gwl_table, new_time:bool=False):
+        self.qmv_old = np.copy(self.qmv)
         # updates unsaturated zone for fixed gwl and given recharge on top
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(gwl_table)
+        if new_time:
+            self.qmf = np.copy(self.qmv_old)
         for ibox in self.non_submerged_boxes:
             #TODO: should we use the self.database.get_max_ig
             if ibox == 0:
@@ -65,7 +69,7 @@ class UnsaturatedZone:
         self.database.update_unsaturated_variables(self.qmv, self.phead, self.non_submerged_boxes)
         return summed_sv(self.sv) - summed_sv(self.sv_old)
 
-    def finalize_timestep(self, gwl_table, qmodf: float):
+    def finalize_timestep(self, gwl_table, qmodf: float, save_to_old: bool = True):
         # updates the internal states of unsaturated zone, based on the new gwl
         self.ig_table, self.fig_table = self.database.gwl_to_index(
             gwl_table
@@ -103,5 +107,6 @@ class UnsaturatedZone:
             else:
                 self.phead[ibox] = -cm2m*(10**((self.ip[ibox]+self.fip[ibox])*self.database.ddpptb))
         # save to old
-        self.sv_old = np.copy(self.sv)
+        if save_to_old:
+            self.sv_old = np.copy(self.sv)
         return

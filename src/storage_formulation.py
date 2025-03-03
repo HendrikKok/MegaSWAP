@@ -21,24 +21,23 @@ def relaxation_factor(iter: int):
 class StorageFormulation:
     
     def __init__(self, database: DataBase, initial_gwl: float, dtgw: float):
-        self.dtgw = dtgw                                                       # timestep length in days
-        self.database = database                                               # class that handels all database interactions
-        self.s = 0.0                                                           # integrated storage deficit unsaturated zone
-        self.s_old = 0.0                                                       # integrated storage deficit unsaturated zone for t = t-1  
-        self.gwl_table = copy.copy(initial_gwl)                                # groundwaterlevel based on table interpolation  
-        self.gwl_table_old = copy.copy(initial_gwl)                            # groundwaterlevel based on table interpolation  for t = t-1
-        self.gwl_mf6 = copy.copy(initial_gwl)                                  # groundwaterlevel from MODFLOW 6    
-        self.gwl_mf6_old = copy.copy(initial_gwl)                              # groundwaterlevel from MODFLOW 6 for t = t-1 
-        self.ig_mf6 = 0                                                        # storage table index for given gwl
-        self.fig_mf6  = 0.0                                                    # lineair fraction between ig and ig +1, for given gwl
-        self.qmodf = 0.0                                                       # contribution of MODFLOW 6 to shared water balance
-        self.vcor = 0.0                                                        # correction for non convergence
-        self.sc1 = sc1_min                                                     # sy for MODFLOW 6
-        self.database.update_saturated_variables(self.gwl_table_old, self.gwl_mf6_old)           # set inital gwl
+        self.dtgw = dtgw                                                                  # timestep length in days
+        self.database = database                                                          # class that handels all database interactions
+        self.s = 0.0                                                                      # integrated storage deficit unsaturated zone
+        self.s_old = 0.0                                                                  # integrated storage deficit unsaturated zone for t = t-1  
+        self.gwl_table = copy.copy(initial_gwl)                                           # groundwaterlevel based on table interpolation  
+        self.gwl_table_old = copy.copy(initial_gwl)                                       # groundwaterlevel based on table interpolation  for t = t-1
+        self.gwl_mf6 = copy.copy(initial_gwl)                                             # groundwaterlevel from MODFLOW 6    
+        self.gwl_mf6_old = copy.copy(initial_gwl)                                         # groundwaterlevel from MODFLOW 6 for t = t-1 
+        self.ig_mf6 = 0                                                                   # storage table index for given gwl
+        self.fig_mf6  = 0.0                                                               # lineair fraction between ig and ig +1, for given gwl
+        self.qmodf = 0.0                                                                  # contribution of MODFLOW 6 to shared water balance
+        self.vcor = 0.0                                                                   # correction for non convergence
+        self.sc1 = sc1_min                                                                # sy for MODFLOW 6
+        self.database.update_saturated_variables(self.gwl_table_old, self.gwl_mf6_old)    # set inital gwl
         self.sc1_bak1 = sc1_min
         
     def initialize(self, s, s_old, inital_gwl):
-        # self.s = s
         self.s_old = s_old
         self.ig_table, self.fig_table = self.database.gwl_to_index(inital_gwl)
 
@@ -70,11 +69,9 @@ class StorageFormulation:
         if abs(gwl_mf6 - gwl_table) > treshold:
             # use change in storage deficit in unsaturated zone + dH of MF
             sc1 = (self.s - self.s_mf6_old) / (gwl_table - self.gwl_mf6_old)
-            pass
         else:
             # no dH, use interpolated value from table
             sc1 = self.database.get_sc1_from_gwl_index(self.ig_table)
-            pass
         return minmax(sc1, sc1_min, 1.0)
     
     def get_sc1(self, gwl_mf6, gwl_table):
@@ -93,7 +90,7 @@ class StorageFormulation:
         if abs(gwl_mf6 - self.gwl_mf6_old) > treshold:
             sc1_level = (self.s_mf6 - self.s_mf6_old) / (gwl_mf6 - self.gwl_mf6_old)
         else:
-            sc1_level = self.database.get_sc1_from_gwl_index(ig_mf6)  #TODO DEBUG!!!
+            sc1_level = self.database.get_sc1_from_gwl_index(ig_mf6)
         sc1_level = minmax(sc1_level, sc1_min, 1.0)
         return sc1_balance, sc1_level
     
@@ -108,7 +105,6 @@ class StorageFormulation:
         gwl_mf6,
         iter,
     ):
-        self.vcor = 0.0
         self.save_to_stabilise_sc1()
         if iter == 1:
             sc1 = self.get_sc1_iter1(gwl_mf6, self.gwl_table)

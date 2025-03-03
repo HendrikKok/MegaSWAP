@@ -84,7 +84,7 @@ def plot_results(log, megaswap, ntime_) -> None:
     ax["1"].legend()
     ax["4"].legend()
     
-    svat_per = pd.read_csv(r"d:\werkmap\prototype_metaswap\coupler_model\metaswap_a\msw\csv\svat_per_0000000001.csv")
+    svat_per = pd.read_csv(r"c:\werkmap\coupler_model\metaswap_a\msw\csv\svat_per_0000000001.csv")
     msw_sc1 = svat_per["    sc1(m3/m2/m)"][0:ntime_]
 
     # for ii in range(5):
@@ -139,7 +139,7 @@ def plot_results(log, megaswap, ntime_) -> None:
     #     plt.tight_layout()
     #     plt.savefig(path + f"exchange_vars_coupled_t{itime}.png")
     #     plt.close()
-    s_raw = np.loadtxt(r'd:\werkmap\prototype_metaswap\coupler_model\metaswap_a\fort.555', skiprows=1) 
+    s_raw = np.loadtxt(r'c:\werkmap\coupler_model\metaswap_a\fort.555', skiprows=1) 
     s = s_raw[:,3][s_raw[:,1] == 2]
     s_old = s_raw [:,4][s_raw[:,1] == 2]
     qmodf = s_raw [:,-1][s_raw[:,1] == 2]
@@ -273,4 +273,39 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
     ax["7"].legend()
     plt.tight_layout()
     plt.savefig(path + "exchange_vars_coupled_combined.png")
+    plt.close()
+    
+    
+    figure, ax = plt.subplot_mosaic(
+        """
+        123
+        """
+    )
+    niter = log.niter[0:ntime_].max()
+    for iter in range(niter):
+        ax["1"].plot(log.sc1[0:ntime_, iter], label="sc1")
+        ax["2"].plot(log.mf6_head[0:ntime_, iter], label="heads")
+    
+    ax["3"].plot(log.niter[0:ntime_], label="niter")
+    ax["1"].legend()
+    ax["2"].legend()
+    ax["3"].legend()
+    plt.tight_layout()
+    plt.savefig(path + "iter.png")
+    plt.close()
+    
+    figure, ax = plt.subplot_mosaic(
+        """
+        12
+        """
+    )
+    niter = log.niter[0:ntime_].max()
+    for iter in range(niter):
+        ax["1"].plot(log.ds[0:ntime_, iter], label="ds")
+        for itime in range(ntime_):
+            ax["2"].plot(np.arange(4),log.qmv[itime, iter, 0:4], label=f"qmv{iter}_{itime}")
+    ax["1"].legend()
+    ax["2"].legend()
+    plt.tight_layout()
+    plt.savefig(path + "qmv.png")
     plt.close()

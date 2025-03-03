@@ -57,3 +57,32 @@ class MegaSwap:
         self.unsaturated_zone.finalize_timestep(self.storage_formulation.gwl_table, self.storage_formulation.qmodf)
         self.storage_formulation.finalise_timestep()
 
+
+class MegaSwapExperimental(MegaSwap):
+    
+    def prepare_timestep(self, itime: int, gwl:float) -> tuple[float, float]:
+        self.ds = self.unsaturated_zone.update(self.qrch[itime], gwl)
+        self.vsim = self.qrch[itime] - self.ds / self.dtgw
+        ig, _ = self.database.gwl_to_index(gwl)
+        self.sc1 = self.get_sc1(ig, self.unsaturated_zone.ip, self.unsaturated_zone.fip)
+        return self.vsim, self.sc1
+    
+    def finalise_timestep(self, gwl, qmodf, save_to_old) -> None:
+        # self.unsaturated_zone.sv_old = np.copy(self.unsaturated_zone.sv)
+        self.unsaturated_zone.finalize_timestep(gwl, qmodf, save_to_old)
+        
+    def get_summed_s(self,ig,ip,fip):
+        s =0.0
+        for ibox in self.unsaturated_zone.non_submerged_boxes:
+            s += self.database.svtb.sel(ib=ibox, ig=ig, ip=ip[ibox]).item() + fip[ibox] * (
+            self.database.svtb.sel(ib=ibox, ig=ig, ip=ip[ibox] + 1).item()
+            - self.database.svtb.sel(ib=ibox, ig=ig, ip=ip[ibox]).item()
+        )
+        return s
+        
+    def get_sc1(self,ig, ip, fip): 
+        s1 = self.get_summed_s(ig, ip, fip)
+        s2 = self.get_summed_s(ig + 1, ip, fip)
+        return (s1 - s2) / (self.database.dpgwtb.loc[ig + 1] - self.database.dpgwtb.loc[ig])
+
+    

@@ -1,6 +1,6 @@
 import numpy as np
 from xmipy import XmiWrapper
-from src.msw_simulation import MegaSwap
+from src.msw_simulation import MegaSwap, MegaSwapExperimental
 
 class Logging:
     def __init__(self, ntime: int):
@@ -16,8 +16,10 @@ class Logging:
         self.fig = np.full(ntime, np.nan)
         self.s = np.full(ntime, np.nan)
         self.s_old = np.full(ntime, np.nan)
-        self.ds = np.full(ntime, np.nan)
+        self.ds = np.full((ntime, 2000), np.nan)
         self.vcor = np.full(ntime, np.nan)
+        self.niter = np.full(ntime, 0)
+        self.qmv = np.full((ntime, 100, 6), np.nan)
 
 
 class Simulation:
@@ -98,19 +100,19 @@ class CoupledSimulation(Simulation):
             has_converged = self.do_iter(1)
             self.msw.finalise_iter(self.mf6_head[0])
             nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
-            self.log_exchange_vars(iter -1, nbox)
+            self.log_exchange_vars(iter -1, nbox, iter)
             if has_converged:
                 break
         self.mf6.finalize_solve(1)
 
         self.mf6.finalize_time_step()
         self.msw.finalise_timestep()
-        self.log_exchange_vars(99, nbox)
+        self.log_exchange_vars(99, nbox, iter)
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
 
-    def log_exchange_vars(self, iter, nbox) -> None:
+    def log_exchange_vars(self, iter, nbox, niter_) -> None:
         self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
         self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
         self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
@@ -120,6 +122,69 @@ class CoupledSimulation(Simulation):
         self.log.vsim[self.iperiod] = self.mf6_rch[:]
         self.log.s[self.iperiod] = self.msw.storage_formulation.s
         self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+        self.log.niter[self.iperiod] = niter_
+        self.log.ds[self.iperiod, iter] = self.msw.ds
+        self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
+
+class CoupledExperimentalSimulation(Simulation):
+    """
+    Run all stress periods in a simulation
+    """
+
+    def __init__(self, wdir: str, name: str, msw_parameters: dict):
+        super().__init__(wdir, name)
+        self.mf6_head = self.mf6.get_value_ptr(f"{name.upper()}/X")
+        self.mf6_sto = self.mf6.get_value_ptr(f"{name.upper()}/STO/SS")
+        self.mf6_rch = self.mf6.get_value_ptr(f"{name.upper()}/RCH-1/RECHARGE")
+        self.msw = MegaSwapExperimental(msw_parameters)
+        self.log = Logging(msw_parameters["qrch"].size)
+        self.iperiod = 0
+
+    def update(self):
+        self.mf6.prepare_time_step(0.0)
+        qmv_old = np.copy(self.msw.unsaturated_zone.qmv)
+        vsim, sc1 = self.msw.prepare_timestep(self.iperiod, self.mf6_head[0])
+        self.msw.unsaturated_zone.qmv = np.copy(qmv_old)
+        self.mf6_rch[:] = vsim
+        self.mf6_sto[0] = sc1
+        self.mf6.prepare_solve(1)
+        mf6_head_old = np.copy(self.mf6_head[0])
+        qmodf = 0.0
+        # Convergence loop
+        for iter in range(1, self.max_iter + 1):
+            vsim, sc1 = self.msw.prepare_timestep(self.iperiod, self.mf6_head[0])
+            self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
+            self.mf6_rch[:] = vsim
+            self.mf6_sto[0] = sc1
+            has_converged = self.do_iter(1)
+            # self.msw.finalise_timestep(self.mf6_head[0], qmodf, False)
+            nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
+            self.log_exchange_vars(iter -1, nbox, iter, qmodf)
+            if has_converged:
+                break
+        qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - vsim
+        self.mf6.finalize_solve(1)
+        self.mf6.finalize_time_step()
+        self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
+        self.log_exchange_vars(99, nbox, iter, qmodf)
+        self.iperiod += 1
+        current_time = self.mf6.get_current_time()
+        return current_time
+
+    def log_exchange_vars(self, iter, nbox, niter, qmodf) -> None:
+        self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
+        self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
+        self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
+        self.log.qmodf[self.iperiod, iter] = qmodf
+        self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
+        self.log.nbox[self.iperiod] = nbox
+        self.log.vsim[self.iperiod] = self.mf6_rch[:]
+        self.log.s[self.iperiod] = self.msw.storage_formulation.s
+        self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+        self.log.niter[self.iperiod] = niter
+        self.log.ds[self.iperiod, iter] = self.msw.ds
+        self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
+
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     wdir = mf6_parameters["workdir"]
@@ -129,3 +194,11 @@ def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     sim.finalize()
     return sim.msw, sim.log
 
+
+def run_experimental_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
+    wdir = mf6_parameters["workdir"]
+    name = mf6_parameters["model_name"]
+    sim = CoupledExperimentalSimulation(wdir, name, msw_parameters)
+    sim.run(periods)
+    sim.finalize()
+    return sim.msw, sim.log

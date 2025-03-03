@@ -200,7 +200,7 @@ class DataBase:
                     self.qmrtb.sel(ig=ig, ip=ip + 1).item()
                     - self.qmrtb.sel(ig=ig, ip=ip).item()
                 )
-                # average ; allow for an increase of the percolation
+                # average; allow for an increase of the percolation
                 if qmvtp < 0.0 and qmvtp < self.qmv[ibox]:
                     qmvtp = qmvtp * 0.5 + self.qmv[ibox] * 0.5
                 # from qmvtp find phead and indexes
