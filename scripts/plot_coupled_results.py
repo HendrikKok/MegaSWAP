@@ -171,12 +171,37 @@ def plot_results(log, megaswap, ntime_) -> None:
     ax["3"].plot(dsun[0:ntime_], label="dsun")
     ax["3"].legend()
     ax["3"].set_ylim(-0.003, 0.003)
-
-
-
     plt.tight_layout()
     plt.savefig(path + "s.png")
     plt.close()
+
+    figure, ax = plt.subplot_mosaic(
+        """
+        01
+        23
+        """
+    )
+    ax["0"].plot(log.qrun[0:ntime_], label="runoff")
+    ax["0"].legend()
+    ax["1"].plot(log.vpond[0:ntime_], label="volume")
+    ax["1"].legend()
+    ax["2"].plot(log.qrch_init[0:ntime_], label="pp")
+    ax["2"].plot(log.qrch[0:ntime_], label="pp - excess")
+    ax["2"].plot(np.array([0.0036] * ntime_), label="max inf")
+    ax["2"].legend()
+
+    ax["3"].plot(log.evap_soil[0:ntime_], label="evap soil")
+    ax["3"].plot(log.evap_pond[0:ntime_], label="evap pond")
+    ax["3"].legend()
+    plt.tight_layout()
+    plt.savefig(path + "qrun.png")
+    plt.close()
+
+
+    
+
+
+
 
 
 def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
@@ -300,10 +325,11 @@ def plot_combined_results(log, megaswap, model_dir, ntime_) -> None:
         """
     )
     niter = log.niter[0:ntime_].max()
-    for iter in range(niter):
-        ax["1"].plot(log.ds[0:ntime_, iter], label="ds")
-        for itime in range(ntime_):
-            ax["2"].plot(np.arange(4),log.qmv[itime, iter, 0:4], label=f"qmv{iter}_{itime}")
+    iter = 99
+    # for iter in range(niter):
+    ax["1"].plot(log.ds[0:ntime_, iter], label="ds")    
+    qmv = np.sum(log.qmv,axis = 2, where = np.isfinite(log.qmv))
+    ax["2"].plot(qmv[0:ntime_, iter], label=f"qmv{iter}")
     ax["1"].legend()
     ax["2"].legend()
     plt.tight_layout()

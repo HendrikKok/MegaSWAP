@@ -29,9 +29,12 @@ def qmr2ip(qmr, ig, ip_indexes: xr.DataArray, qmrtb: xr.DataArray) -> tuple[int,
         ip = ip_indexes.max().item()
         fip = 0
         return ip, fip
-    fip = (qmr - qmr1d.sel(ip=ip).item()) / (
-        qmr1d.sel(ip=ip+1).item() - qmr1d.sel(ip=ip).item()
-    )
+    if qmr - qmr1d.sel(ip=ip).item() == 0:
+        fip = 0.0
+    else:
+        fip = (qmr - qmr1d.sel(ip=ip).item()) / (
+            qmr1d.sel(ip=ip+1).item() - qmr1d.sel(ip=ip).item()
+        )
     if fip < 0.0: # bacause of sorter action
         ip -= 1 
         fip = (qmr - qmr1d.sel(ip=ip).item()) / (

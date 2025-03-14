@@ -10,5 +10,6 @@ BEGIN PACKAGES
   OC6           model.oc
   GHB6          model.ghb
   WEL6          model.wel
+  DRN6          model.drn  sof
 END PACKAGES
 

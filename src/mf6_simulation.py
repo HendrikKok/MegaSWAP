@@ -19,8 +19,14 @@ class Logging:
         self.ds = np.full((ntime, 2000), np.nan)
         self.vcor = np.full(ntime, np.nan)
         self.niter = np.full(ntime, 0)
-        self.qmv = np.full((ntime, 100, 6), np.nan)
-
+        self.qmv = np.full((ntime, 2000, 6), np.nan)
+        self.qrun = np.full(ntime, 0.0)
+        self.vpond = np.full(ntime, 0.0)
+        self.qmax = np.full(ntime, 0.0)
+        self.qrch_init = np.full(ntime, 0.0)
+        self.qrch = np.full(ntime, 0.0)
+        self.evap_soil = np.full(ntime, 0.0)
+        self.evap_pond = np.full(ntime, 0.0)
 
 class Simulation:
     """
@@ -83,6 +89,7 @@ class CoupledSimulation(Simulation):
         self.mf6_head = self.mf6.get_value_ptr(f"{name.upper()}/X")
         self.mf6_sto = self.mf6.get_value_ptr(f"{name.upper()}/STO/SS")
         self.mf6_rch = self.mf6.get_value_ptr(f"{name.upper()}/RCH-1/RECHARGE")
+
         self.msw = MegaSwap(msw_parameters)
         self.log = Logging(msw_parameters["qrch"].size)
         self.iperiod = 0
@@ -125,6 +132,7 @@ class CoupledSimulation(Simulation):
         self.log.niter[self.iperiod] = niter_
         self.log.ds[self.iperiod, iter] = self.msw.ds
         self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
+        self.log.qrun[self.iperiod] = self.msw.qrun[self.iperiod]
 
 class CoupledExperimentalSimulation(Simulation):
     """
@@ -136,9 +144,16 @@ class CoupledExperimentalSimulation(Simulation):
         self.mf6_head = self.mf6.get_value_ptr(f"{name.upper()}/X")
         self.mf6_sto = self.mf6.get_value_ptr(f"{name.upper()}/STO/SS")
         self.mf6_rch = self.mf6.get_value_ptr(f"{name.upper()}/RCH-1/RECHARGE")
+        self.mf6_sof_elev = self.mf6.get_value_ptr(f"{name.upper()}/SOF/ELEV")
+        self.mf6_sof_cond = self.mf6.get_value_ptr(f"{name.upper()}/SOF/COND ")
         self.msw = MegaSwapExperimental(msw_parameters)
         self.log = Logging(msw_parameters["qrch"].size)
         self.iperiod = 0
+        sof_cond, sof_elev = self.msw.get_sof_parameters()
+        self.mf6_sof_cond[0] = sof_cond
+        self.mf6_sof_elev[0] = sof_elev
+        self.log.qrch_init = np.copy(msw_parameters["qrch"])
+        self.log.qrch = np.zeros_like(self.log.qrch_init)
 
     def update(self):
         self.mf6.prepare_time_step(0.0)
@@ -152,39 +167,45 @@ class CoupledExperimentalSimulation(Simulation):
         qmodf = 0.0
         # Convergence loop
         for iter in range(1, self.max_iter + 1):
-            vsim, sc1 = self.msw.prepare_timestep(self.iperiod, self.mf6_head[0])
-            self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
-            self.mf6_rch[:] = vsim
-            self.mf6_sto[0] = sc1
+            if iter < 6:
+                vsim, sc1 = self.msw.do_iter(self.iperiod, self.mf6_head[0])
+                self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
+                self.mf6_rch[:] = vsim
+                self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
             # self.msw.finalise_timestep(self.mf6_head[0], qmodf, False)
             nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
-            self.log_exchange_vars(iter -1, nbox, iter, qmodf)
+            self.log_exchange_vars(iter -1, nbox, iter, qmodf, vsim)
             if has_converged:
                 break
-        qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - vsim
+        qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - (vsim)
         self.mf6.finalize_solve(1)
         self.mf6.finalize_time_step()
         self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
-        self.log_exchange_vars(99, nbox, iter, qmodf)
+        self.log_exchange_vars(99, nbox, iter, qmodf, vsim)
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
 
-    def log_exchange_vars(self, iter, nbox, niter, qmodf) -> None:
+    def log_exchange_vars(self, iter, nbox, niter, qmodf, vsim) -> None:
         self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
         self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
         self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
         self.log.qmodf[self.iperiod, iter] = qmodf
         self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
         self.log.nbox[self.iperiod] = nbox
-        self.log.vsim[self.iperiod] = self.mf6_rch[:]
+        self.log.vsim[self.iperiod] = vsim
         self.log.s[self.iperiod] = self.msw.storage_formulation.s
         self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
         self.log.niter[self.iperiod] = niter
         self.log.ds[self.iperiod, iter] = self.msw.ds
         self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
-
+        self.log.qrun[self.iperiod] = self.msw.qrun
+        self.log.vpond[self.iperiod] = self.msw.ponding.volume
+        self.log.qmax[self.iperiod] = self.msw.qmax
+        self.log.qrch[self.iperiod] = self.msw.qrch[self.iperiod]
+        self.log.evap_soil[self.iperiod] = self.msw.evap_soil
+        self.log.evap_pond[self.iperiod] = self.msw.evap_ponding
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     wdir = mf6_parameters["workdir"]

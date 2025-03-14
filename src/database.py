@@ -118,21 +118,30 @@ class DataBase:
         sigma1d = sigmabtb.sel(ig=ig) + fig * (
             sigmabtb.sel(ig=ig + 1) - sigmabtb.sel(ig=ig)
         )
+        if np.unique(sigma1d).size == 1:
+            return None, None
         sorter = np.argsort(sigma1d)
         sorted_index = np.searchsorted(sigma1d, sigma, sorter=sorter)
         if sorted_index >= sorter.size:
-            ip_index = sigmabtb.ip.max()
+            # ip_index = sigmabtb.ip.max().item()
+            ip_index = sorter[sorted_index - 1].item()
         else:
             ip_index = sorter[sorted_index].item()
-        if ip_index >= sigmabtb.ip.max():
-            print("out of max bounds..")
-            ip = sigmabtb.ip.max().item() - 1
+        # if ip_index >= sigmabtb.ip.max():
+        #     print("out of max bounds..")
+        #     ip = ip_index - 1
+        #     fip = 1.0
+        # elif ip_index <= sigmabtb.ip.min():
+        #     ip = sigmabtb.ip.min()
+        #     fip = 0
+        # else:
+        ip = sigmabtb.ip[ip_index].item()
+        if ip == sigmabtb.ip.min():
+            fip = 0.0
+        elif ip >= sigmabtb.ip.max():
+            ip = ip -1
             fip = 1.0
-        elif ip_index < sigmabtb.ip.min():
-            ip = sigmabtb.ip.min()
-            fip = 0
         else:
-            ip = sigmabtb.ip[ip_index].item()
             fip = (
                 (sigma - sigma1d[ip_index])
                 / (sigma1d[ip_index + 1] - sigma1d[ip_index])
@@ -144,6 +153,8 @@ class DataBase:
         sigma1d = sigmabtb.sel(ig=ig) + fig * (
             sigmabtb.sel(ig=ig + 1) - sigmabtb.sel(ig=ig)
         )
+        if np.unique(sigma1d).size == 1:
+            return None, None
         sorter = np.argsort(sigma1d)
         sorted_index = np.searchsorted(sigma1d, sv, sorter=sorter)
         if sorted_index >= sorter.size:
@@ -183,6 +194,7 @@ class DataBase:
         ig, _ = self.gwl_to_index(gwl)
         dpgw = np.ones(self.box_top.size) * self.dpgwtb["value"].loc[ig].item()
         mask =  dpgw >= -self.box_top
+        mask[0] = True
         return np.arange(self.box_top.size)[mask]
         
     def get_phead_index_estimate(self, ig, ibox, peq, peq_table):
@@ -234,7 +246,7 @@ class DataBase:
             sgwln += self.create_storage_tabel_box(
                 ibox, ig
             )
-        return sgwln.item()
+        return sgwln
 
     def create_storage_tabel_box(self, ibox, ig):
         #  equilibrium pressure head for the current groundwater level

@@ -1,6 +1,7 @@
 import numpy as np
 from src.utils import phead_to_index, get_sv, init_qmv, get_qmv, summed_sv, cm2m
 from src.database import DataBase
+from src.utils import phead_to_index
 
 class UnsaturatedZone:
 
@@ -35,10 +36,21 @@ class UnsaturatedZone:
             self.qmv[ibox] = init_qmv(self.ig_table, self.fig_table, self.ip[ibox], self.fip[ibox],self.database.qmrtb)
         self.qmv_old = np.copy(self.qmv)                                            # bottom flux per box, for t -1
 
+    def _get_qrch(self, qrch, gwl_table) -> float:
+        if gwl_table >= 1000:  #self.database.mv
+            ig, _ = self.database.gwl_to_index(gwl_table)
+            ip, _ = phead_to_index(self.phead, self.database.ddpptb, self.database.nuip)
+            ip = ip[0]
+            q = -self.database.qmrtb.sel(ig=ig,ip=ip).item()
+            return min(qrch, q)
+        else:
+            return qrch
+
     def update(self, qrch, gwl_table, new_time:bool=False):
         self.qmv_old = np.copy(self.qmv)
         # updates unsaturated zone for fixed gwl and given recharge on top
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(gwl_table)
+        # qrch = self._get_qrch(qrch,gwl_table)
         if new_time:
             self.qmf = np.copy(self.qmv_old)
         for ibox in self.non_submerged_boxes:
@@ -48,9 +60,11 @@ class UnsaturatedZone:
             else:
                 qin = self.qmv[ibox - 1]
             sigma = self.sv_old[ibox] - qin * self.dtgw
-            self.ip[ibox], self.fip[ibox] = self.database.sigma2ip(
+            ip, fip = self.database.sigma2ip(
                 sigma, self.ig_table, self.fig_table, ibox, self.dtgw
             )
+            if ip is not None and fip is not None:
+                self.ip[ibox], self.fip[ibox] = ip, fip
             if self.ip[ibox] < 0:
                 self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[
                     ibox
@@ -94,9 +108,11 @@ class UnsaturatedZone:
         ]
         # update prz
         for ibox in self.non_submerged_boxes:
-            self.ip[ibox], self.fip[ibox] = self.database.sv2ip(
+            ip, fip = self.database.sv2ip(
                 self.sv[ibox], self.ig_table, self.fig_table, ibox, self.dtgw
             )
+            if ip is not None and fip is not None:
+                self.ip[ibox], self.fip[ibox] = ip, fip
             if self.ip[ibox] < 0:
                 self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[
                     ibox
