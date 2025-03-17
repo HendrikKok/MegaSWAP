@@ -3,7 +3,7 @@ from src.mf6_simulation import run_coupled_model, run_experimental_coupled_model
 from scripts.plot_coupled_results import plot_results, plot_combined_results
 
 # msw inputs
-qrch = np.array([0.0045] * 60 + [0.0026] * 20 + [0.0036] * 40)   # 0.36
+qrch = np.array([0.0045] * 60 + [0.0026] * 20 + [0.0032] * 20+ [0.000] * 20)   # 0.36
 qpet = np.ones_like(qrch) * 0.001
 # qrch = np.array([0.0026]*30 + [0.0]*10 + [0.0032]*30 + [0.0026]*50)
 
@@ -17,6 +17,7 @@ msw_parameters = {
     "initial_phead": -1.513561,  # -(0 - -6.9)
     "dtgw": 1.0,
     "area": 100.0,
+    "max_infiltration": 0.0032, # 0.0036 
 }
 
 # mf6 inputs

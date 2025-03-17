@@ -32,7 +32,7 @@ class MegaSwap:
             zmax = 0.02, 
             area = parameters["area"],
             soil_resistance = 1.0,
-            max_infiltration_rate = 0.0036,
+            max_infiltration_rate = parameters["max_infiltration"],
             dtgw= 1.0
         )
         self.soil = Soil()

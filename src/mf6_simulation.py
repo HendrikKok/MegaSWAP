@@ -215,7 +215,6 @@ def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     sim.finalize()
     return sim.msw, sim.log
 
-
 def run_experimental_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     wdir = mf6_parameters["workdir"]
     name = mf6_parameters["model_name"]
