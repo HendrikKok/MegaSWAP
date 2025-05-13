@@ -213,7 +213,7 @@ class NonCoupledExperimentalSimulation:
     Run all stress periods in a simulation
     """
 
-    def __init__(self, msw_parameters: dict):
+    def __init__(self, msw_parameters: dict, delta: np.float64):
         self.mf6_head = np.ones(5) * msw_parameters["initial_gwl"]
         self.mf6_sto = np.ones(5) * 0.001
         self.mf6_rch = np.zeros(1)
@@ -227,6 +227,7 @@ class NonCoupledExperimentalSimulation:
         self.mf6_sof_elev[0] = sof_elev
         self.log.qrch_init = np.copy(msw_parameters["qrch"])
         self.log.qrch = np.zeros_like(self.log.qrch_init)
+        self.delta = delta
 
 
     def update(self):
@@ -249,11 +250,13 @@ class NonCoupledExperimentalSimulation:
             self.log_exchange_vars(iter -1, nbox, iter, qmodf, vsim)
             if has_converged:
                 break
+        self.mf6_head[0] += self.delta
+        self.mf6_head[0] = min(self.mf6_head[0], 0.0)
         qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - (vsim)
         self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
-        self.log_exchange_vars(99, nbox, iter, qmodf, vsim)
+        self.log_exchange_vars(iter, nbox, iter, qmodf, vsim)
         self.iperiod += 1
-        self.mf6_head[0] += 0.01
+
         return self.iperiod
     
     def run(self, periods):
@@ -300,7 +303,7 @@ def run_experimental_coupled_model(periods, mf6_parameters: dict, msw_parameters
     sim.finalize()
     return sim.msw, sim.log
 
-def run_experimental_non_coupled_model(periods, msw_parameters: dict):
-    sim = NonCoupledExperimentalSimulation(msw_parameters)
+def run_experimental_non_coupled_model(periods, msw_parameters: dict, delta: np.float64):
+    sim = NonCoupledExperimentalSimulation(msw_parameters, delta)
     sim.run(periods)
     return sim.msw, sim.log

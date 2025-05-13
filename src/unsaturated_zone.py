@@ -34,7 +34,7 @@ class UnsaturatedZone:
         self.qmv = np.zeros(self.database.nbox)
         for ibox in range(self.database.nbox):
             self.qmv[ibox] = init_qmv(self.ig_table, self.fig_table, self.ip[ibox], self.fip[ibox],self.database.qmrtb)
-        self.qmv_old = np.copy(self.qmv)                                            # bottom flux per box, for t -1
+        self.qmv_old = np.copy(self.qmv)    
 
     def _get_qrch(self, qrch, gwl_table) -> float:
         if gwl_table >= 1000:  #self.database.mv
