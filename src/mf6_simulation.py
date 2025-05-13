@@ -207,6 +207,83 @@ class CoupledExperimentalSimulation(Simulation):
         self.log.evap_soil[self.iperiod] = self.msw.evap_soil
         self.log.evap_pond[self.iperiod] = self.msw.evap_ponding
 
+
+class NonCoupledExperimentalSimulation:
+    """
+    Run all stress periods in a simulation
+    """
+
+    def __init__(self, msw_parameters: dict):
+        self.mf6_head = np.ones(5) * msw_parameters["initial_gwl"]
+        self.mf6_sto = np.ones(5) * 0.001
+        self.mf6_rch = np.zeros(1)
+        self.mf6_sof_elev = np.zeros(1)
+        self.mf6_sof_cond = np.ones(1)
+        self.msw = MegaSwapExperimental(msw_parameters)
+        self.log = Logging(msw_parameters["qrch"].size)
+        self.iperiod = 0
+        sof_cond, sof_elev = self.msw.get_sof_parameters()
+        self.mf6_sof_cond[0] = sof_cond
+        self.mf6_sof_elev[0] = sof_elev
+        self.log.qrch_init = np.copy(msw_parameters["qrch"])
+        self.log.qrch = np.zeros_like(self.log.qrch_init)
+
+
+    def update(self):
+        qmv_old = np.copy(self.msw.unsaturated_zone.qmv)
+        vsim, sc1 = self.msw.prepare_timestep(self.iperiod, self.mf6_head[0])
+        self.msw.unsaturated_zone.qmv = np.copy(qmv_old)
+        self.mf6_rch[:] = vsim
+        self.mf6_sto[0] = sc1
+        mf6_head_old = np.copy(self.mf6_head[0])
+        qmodf = 0.0
+        # Convergence loop
+        for iter in range(1, 2):
+            if iter < 6:
+                vsim, sc1 = self.msw.do_iter(self.iperiod, self.mf6_head[0])
+                self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
+                self.mf6_rch[:] = vsim
+                self.mf6_sto[0] = sc1
+            has_converged = True
+            nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
+            self.log_exchange_vars(iter -1, nbox, iter, qmodf, vsim)
+            if has_converged:
+                break
+        qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - (vsim)
+        self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
+        self.log_exchange_vars(99, nbox, iter, qmodf, vsim)
+        self.iperiod += 1
+        self.mf6_head[0] += 0.01
+        return self.iperiod
+    
+    def run(self, periods):
+        iperiod = 0
+        while iperiod < periods:
+            iperiod = self.update()
+        print(f"Simulation terminated normally for {periods} periods")
+
+    def log_exchange_vars(self, iter, nbox, niter, qmodf, vsim) -> None:
+        self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
+        self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
+        self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
+        self.log.qmodf[self.iperiod, iter] = qmodf
+        self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
+        self.log.nbox[self.iperiod] = nbox
+        self.log.vsim[self.iperiod] = vsim
+        self.log.s[self.iperiod] = self.msw.storage_formulation.s
+        self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+        self.log.niter[self.iperiod] = niter
+        self.log.ds[self.iperiod, iter] = self.msw.ds
+        self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
+        self.log.qrun[self.iperiod] = self.msw.qrun
+        self.log.vpond[self.iperiod] = self.msw.ponding.volume
+        self.log.qmax[self.iperiod] = self.msw.qmax
+        self.log.qrch[self.iperiod] = self.msw.qrch[self.iperiod]
+        self.log.evap_soil[self.iperiod] = self.msw.evap_soil
+        self.log.evap_pond[self.iperiod] = self.msw.evap_ponding
+
+
+
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
     wdir = mf6_parameters["workdir"]
     name = mf6_parameters["model_name"]
@@ -221,4 +298,9 @@ def run_experimental_coupled_model(periods, mf6_parameters: dict, msw_parameters
     sim = CoupledExperimentalSimulation(wdir, name, msw_parameters)
     sim.run(periods)
     sim.finalize()
+    return sim.msw, sim.log
+
+def run_experimental_non_coupled_model(periods, msw_parameters: dict):
+    sim = NonCoupledExperimentalSimulation(msw_parameters)
+    sim.run(periods)
     return sim.msw, sim.log
