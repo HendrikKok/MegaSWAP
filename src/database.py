@@ -4,6 +4,7 @@ import pandas as pd
 from src.utils import cm2m, dc, phead_to_index, qmr2ip
 
 
+
 class DataBase:
 
     def __init__(self, rootzone_dikte: float, mv: float, dbase_path: str):
@@ -14,7 +15,11 @@ class DataBase:
         self.rootzone_dikte = rootzone_dikte                               # rootzone thickness   
         self.set_constants_from_tabel(tabel)                               # set all needed variables from nc
         self.set_arrays(tabel)
-        self.storage_tabel = np.full(self.svtb.ig.shape, np.nan)           # array to store temp-storage deficite estimates 
+        # self.storage_tabel = np.full(self.svtb.ig.shape, np.nan)           # array to store temp-storage deficite estimates 
+        self.storage_tabel = pd.DataFrame(
+                   data={"value": np.full(self.svtb.ig.shape, np.nan)  },
+                   index=self.svtb.ig.to_numpy(),
+               )
         
     def set_constants_from_tabel(self, tabel: xr.Dataset) -> None:
         self.ddpptb = tabel.ddpptb
@@ -113,13 +118,21 @@ class DataBase:
                         igmax = igtp
         return igmax
     
-    def sigma2ip(self, sigma, ig, fig, ibox: int, dtgw: float) -> tuple[int, float]:
+    def nearest_from_current_ip(self, new_ip, sigma1d, old_ip):
+        index_in_sigma1d = np.flatnonzero(sigma1d.sel(ip=new_ip) == sigma1d)
+        ips_in_sigma1d = self.qmrtb.ip[index_in_sigma1d]
+        if index_in_sigma1d.size > 1:
+            new_index = np.argmin(abs(ips_in_sigma1d-old_ip).to_numpy())
+            new_ip = ips_in_sigma1d[new_index].item()
+        return  new_ip
+    
+    def sigma2ip(self, sigma, ig, fig, ibox: int, dtgw: float, current_ip: int, current_fip: float) -> tuple[int, float]:
         sigmabtb = self.svtb.sel(ib=ibox) - dtgw * self.qmrtb
         sigma1d = sigmabtb.sel(ig=ig) + fig * (
             sigmabtb.sel(ig=ig + 1) - sigmabtb.sel(ig=ig)
         )
         if np.unique(sigma1d).size == 1:
-            return None, None
+            return current_ip, current_fip
         sorter = np.argsort(sigma1d)
         sorted_index = np.searchsorted(sigma1d, sigma, sorter=sorter)
         if sorted_index >= sorter.size:
@@ -127,52 +140,48 @@ class DataBase:
             ip_index = sorter[sorted_index - 1].item()
         else:
             ip_index = sorter[sorted_index].item()
-        # if ip_index >= sigmabtb.ip.max():
-        #     print("out of max bounds..")
-        #     ip = ip_index - 1
-        #     fip = 1.0
-        # elif ip_index <= sigmabtb.ip.min():
-        #     ip = sigmabtb.ip.min()
-        #     fip = 0
-        # else:
-        ip = sigmabtb.ip[ip_index].item()
+
+        ip = self.nearest_from_current_ip(sigmabtb.ip[ip_index].item(), sigma1d, current_ip)
         if ip == sigmabtb.ip.min():
             fip = 0.0
         elif ip >= sigmabtb.ip.max():
             ip = ip -1
             fip = 1.0
         else:
-            fip = (
-                (sigma - sigma1d[ip_index])
-                / (sigma1d[ip_index + 1] - sigma1d[ip_index])
-            ).item()
+            dsigma = sigma1d.sel(ip=ip + 1).item() - sigma1d.sel(ip=ip).item()
+            if dsigma == 0:
+                fip = 0.0
+            else:
+                fip = ((sigma - sigma1d.sel(ip=ip).item()) / dsigma).item()
         return ip, fip
 
-    def sv2ip(self, sv, ig, fig, ibox: int, dtgw: float) -> tuple[int, float]:
+    def sv2ip(self, sv, ig, fig, ibox: int, dtgw: float, current_ip: int, current_fip: float) -> tuple[int, float]:
         sigmabtb = self.svtb.sel(ib=ibox) # - dtgw * self.qmrtb
         sigma1d = sigmabtb.sel(ig=ig) + fig * (
             sigmabtb.sel(ig=ig + 1) - sigmabtb.sel(ig=ig)
         )
         if np.unique(sigma1d).size == 1:
-            return None, None
+            return current_ip, current_fip
         sorter = np.argsort(sigma1d)
         sorted_index = np.searchsorted(sigma1d, sv, sorter=sorter)
         if sorted_index >= sorter.size:
             ip_index = sigmabtb.ip.max()
         else:
             ip_index = sorter[sorted_index].item()
-        if ip_index >= sigmabtb.ip.max():
+        if ip_index >= sigmabtb.ip.size:
             print("out of max bounds..")
-            ip = sigmabtb.ip.max().item() - 1
+            ip = sigmabtb.ip[0].item() - 1
             fip = 1.0
-        elif ip_index < sigmabtb.ip.min():
-            ip = sigmabtb.ip.min()
+        elif ip_index < 0:
+            ip = sigmabtb.ip[-1].item()
             fip = 0
         else:
-            ip = sigmabtb.ip[ip_index].item()
-            fip = (
-                (sv - sigma1d[ip_index]) / (sigma1d[ip_index + 1] - sigma1d[ip_index])
-            ).item()
+            ip = self.nearest_from_current_ip(sigmabtb.ip[ip_index].item(), sigma1d, current_ip)
+            dsigma = sigma1d.sel(ip=ip + 1).item() - sigma1d.sel(ip=ip).item()
+            if dsigma ==0:
+                fip = 0.0
+            else:
+                fip = ((sv - sigma1d.sel(ip=ip).item()) / dsigma).item()
         return ip, fip
     
     def gwl_to_index(self, gwl) -> tuple[np.ndarray, np.ndarray]:
@@ -265,52 +274,55 @@ class DataBase:
         )
         
     def get_storage_from_gwl_index(self, ig, fig):
-        self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig)
-        self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1)
-        return self.storage_tabel[ig] + fig * (
-            self.storage_tabel[ig + 1] - self.storage_tabel[ig]
+        self.storage_tabel["value"][ig] = self.create_storage_tabel_boxes(ig)
+        self.storage_tabel["value"][ig + 1] = self.create_storage_tabel_boxes(ig + 1)
+        return self.storage_tabel["value"][ig] + fig * (
+            self.storage_tabel["value"][ig + 1] - self.storage_tabel["value"][ig]
         )
     
     def get_gwl_table_from_storage(self, sarg, ig_start):
         ig = ig_start
-        self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig)
-        self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1)
-        dif = self.storage_tabel[ig + 1] - sarg
+        self.storage_tabel["value"][ig] = self.create_storage_tabel_boxes(ig)
+        self.storage_tabel["value"][ig + 1] = self.create_storage_tabel_boxes(ig + 1)
+        dif = self.storage_tabel["value"][ig + 1] - sarg
         ig = None
         if dif < 0.0:
-            for ig in range(ig_start, -1, -1):
-                self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig)
+            for ig in range(ig_start, -3, -1):
+                self.storage_tabel["value"][ig] = self.create_storage_tabel_boxes(ig)
                 if (
-                    sarg <= self.storage_tabel[ig]
-                    and sarg >= self.storage_tabel[ig + 1]
+                    sarg <= self.storage_tabel["value"][ig]
+                    and sarg >= self.storage_tabel["value"][ig + 1]
                 ):
                     break
         else:
-            for ig in range(ig_start, 51, 1):
-                self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig)
+            for ig in range(ig_start, 51, 1):   # be aware of + 1
+                self.storage_tabel["value"][ig + 1] = self.create_storage_tabel_boxes(ig)
                 if (
-                    sarg <= self.storage_tabel[ig]
-                    and sarg >= self.storage_tabel[ig + 1]
+                    sarg <= self.storage_tabel["value"][ig]
+                    and sarg >= self.storage_tabel["value"][ig + 1]
                 ):
                     break
-        fig = (sarg - self.storage_tabel[ig]) / (
-            self.storage_tabel[ig + 1]
-            - self.storage_tabel[ig]
+        fig = (sarg - self.storage_tabel["value"][ig]) / (
+            self.storage_tabel["value"][ig + 1]
+            - self.storage_tabel["value"][ig]
         )
-        return (
-            self.mv
-            - (
-                self.dpgwtb.loc[ig]
-                + fig
-                * (self.dpgwtb.loc[ig + 1] - self.dpgwtb.loc[ig])
-            )
-        )[0].item(), ig, fig
+        if fig == float('-inf'):
+            return self.mv - self.dpgwtb.loc[ig_start].item(), ig_start, 0.0
+        else:
+            return (
+                self.mv
+                - (
+                    self.dpgwtb.loc[ig].item()
+                    + fig
+                    * (self.dpgwtb.loc[ig + 1].item() - self.dpgwtb.loc[ig])
+                )
+            )[0].item(), ig, fig
         
     def get_sc1_from_gwl_index(self, ig):
-        self.storage_tabel[ig] = self.create_storage_tabel_boxes(ig)
-        self.storage_tabel[ig + 1] = self.create_storage_tabel_boxes(ig + 1)
+        self.storage_tabel["value"][ig] = self.create_storage_tabel_boxes(ig)
+        self.storage_tabel["value"][ig + 1] = self.create_storage_tabel_boxes(ig + 1)
         return (
-            self.storage_tabel[ig] - self.storage_tabel[ig + 1]
+            self.storage_tabel["value"][ig] - self.storage_tabel["value"][ig + 1]
         ) / (
             self.dpgwtb.loc[ig + 1]
             - self.dpgwtb.loc[ig]

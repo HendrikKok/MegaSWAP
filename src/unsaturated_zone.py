@@ -48,6 +48,10 @@ class UnsaturatedZone:
 
     def update(self, qrch, gwl_table, new_time:bool=False):
         self.qmv_old = np.copy(self.qmv)
+        # update phead with default values: equilibrium pressure head 
+        # for the current groundwater level
+        dpgw = self.database.box_top[0] - gwl_table
+        self.phead[:] = -dpgw + 0.5 * self.database.rootzone_dikte
         # updates unsaturated zone for fixed gwl and given recharge on top
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(gwl_table)
         # qrch = self._get_qrch(qrch,gwl_table)
@@ -60,11 +64,9 @@ class UnsaturatedZone:
             else:
                 qin = self.qmv[ibox - 1]
             sigma = self.sv_old[ibox] - qin * self.dtgw
-            ip, fip = self.database.sigma2ip(
-                sigma, self.ig_table, self.fig_table, ibox, self.dtgw
+            self.ip[ibox], self.fip[ibox] = self.database.sigma2ip(
+                sigma, self.ig_table, self.fig_table, ibox, self.dtgw, self.ip[ibox], self.fip[ibox]
             )
-            if ip is not None and fip is not None:
-                self.ip[ibox], self.fip[ibox] = ip, fip
             if self.ip[ibox] < 0:
                 self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[
                     ibox
@@ -108,11 +110,9 @@ class UnsaturatedZone:
         ]
         # update prz
         for ibox in self.non_submerged_boxes:
-            ip, fip = self.database.sv2ip(
-                self.sv[ibox], self.ig_table, self.fig_table, ibox, self.dtgw
+            self.ip[ibox], self.fip[ibox] = self.database.sv2ip(
+                self.sv[ibox], self.ig_table, self.fig_table, ibox, self.dtgw, self.ip[ibox], self.fip[ibox]
             )
-            if ip is not None and fip is not None:
-                self.ip[ibox], self.fip[ibox] = ip, fip
             if self.ip[ibox] < 0:
                 self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[
                     ibox

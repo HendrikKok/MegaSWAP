@@ -14,9 +14,9 @@
  #K(nodes) horizontal hydraulic conductivity
  K
  INTERNAL  FACTOR         1   
-0.1
-0.1
-0.1
-0.1
-0.1
+2.0
+2.0
+2.0
+2.0
+2.0
  END GRIDDATA

@@ -27,6 +27,10 @@ class Logging:
         self.qrch = np.full(ntime, 0.0)
         self.evap_soil = np.full(ntime, 0.0)
         self.evap_pond = np.full(ntime, 0.0)
+        self.ig = np.full(ntime, np.nan)
+        self.fig = np.full(ntime, np.nan)
+        self.ip = np.full(ntime, np.nan)
+        self.fip = np.full(ntime, np.nan)
 
 class Simulation:
     """
@@ -134,6 +138,67 @@ class CoupledSimulation(Simulation):
         self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
         self.log.qrun[self.iperiod] = self.msw.qrun[self.iperiod]
 
+
+class NonCoupledSimulation:
+    """
+    Run all stress periods in a simulation
+    """
+
+    def __init__(self, msw_parameters: dict, delta: float):
+        self.mf6_head = np.ones(5) * msw_parameters["initial_gwl"]
+        self.mf6_sto = np.ones(5) * 0.001
+        self.mf6_rch = np.zeros(1)
+        self.msw = MegaSwap(msw_parameters)
+        self.log = Logging(msw_parameters["qrch"].size)
+        self.iperiod = 0
+        self.delta = delta
+
+    def run(self, periods):
+        iperiod = 0
+        while iperiod < periods:
+            iperiod = self.update()
+        print(f"Simulation terminated normally for {periods} periods")
+        
+    def update(self):
+        vsim = self.msw.prepare_timestep(self.iperiod)
+        self.mf6_rch[:] = vsim
+
+        # Convergence loop
+        for iter in range(1, 7):
+            sc1 = self.msw.do_iter(iter)
+            self.mf6_sto[0] = sc1
+            has_converged = False
+            if iter > 6:
+                has_converged = True
+            # fictive update of heads
+            if iter == 1:
+                self.mf6_head[0] += self.delta
+                self.mf6_head[0] = min(self.mf6_head[0], 0.0)
+            self.msw.finalise_iter(self.mf6_head[0])
+            nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
+            self.log_exchange_vars(iter -1, nbox, iter)
+            if has_converged:
+                break
+        self.msw.finalise_timestep()
+        self.log_exchange_vars(iter, nbox, iter)
+        self.iperiod += 1
+        return self.iperiod
+
+    def log_exchange_vars(self, iter, nbox, niter_) -> None:
+        self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
+        self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
+        self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
+        self.log.qmodf[self.iperiod, iter] = self.msw.storage_formulation.qmodf
+        self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
+        self.log.nbox[self.iperiod] = nbox
+        self.log.vsim[self.iperiod] = self.mf6_rch[:]
+        self.log.s[self.iperiod] = self.msw.storage_formulation.s
+        self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+        self.log.niter[self.iperiod] = niter_
+        self.log.ds[self.iperiod, iter] = self.msw.ds
+        self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
+        self.log.qrun[self.iperiod] = self.msw.qrun
+
 class CoupledExperimentalSimulation(Simulation):
     """
     Run all stress periods in a simulation
@@ -239,24 +304,26 @@ class NonCoupledExperimentalSimulation:
         mf6_head_old = np.copy(self.mf6_head[0])
         qmodf = 0.0
         # Convergence loop
-        for iter in range(1, 2):
+        for iter in range(1, 7):
             if iter < 6:
                 vsim, sc1 = self.msw.do_iter(self.iperiod, self.mf6_head[0])
                 self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
                 self.mf6_rch[:] = vsim
                 self.mf6_sto[0] = sc1
-            has_converged = True
+            has_converged = False
+            if iter > 6:
+                has_converged = True
             nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
             self.log_exchange_vars(iter -1, nbox, iter, qmodf, vsim)
             if has_converged:
                 break
-        self.mf6_head[0] += self.delta
-        self.mf6_head[0] = min(self.mf6_head[0], 0.0)
+            if iter == 1:
+                self.mf6_head[0] += self.delta
+                self.mf6_head[0] = min(self.mf6_head[0], 0.0)
         qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - (vsim)
         self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
         self.log_exchange_vars(iter, nbox, iter, qmodf, vsim)
         self.iperiod += 1
-
         return self.iperiod
     
     def run(self, periods):
@@ -284,7 +351,10 @@ class NonCoupledExperimentalSimulation:
         self.log.qrch[self.iperiod] = self.msw.qrch[self.iperiod]
         self.log.evap_soil[self.iperiod] = self.msw.evap_soil
         self.log.evap_pond[self.iperiod] = self.msw.evap_ponding
-
+        self.log.ig[self.iperiod] = self.msw.unsaturated_zone.ig_table
+        self.log.fig[self.iperiod] = self.msw.unsaturated_zone.fig_table
+        self.log.ip[self.iperiod] = self.msw.unsaturated_zone.ip[0]
+        self.log.fip[self.iperiod] = self.msw.unsaturated_zone.fip[0]
 
 
 def run_coupled_model(periods, mf6_parameters: dict, msw_parameters: dict):
@@ -305,5 +375,10 @@ def run_experimental_coupled_model(periods, mf6_parameters: dict, msw_parameters
 
 def run_experimental_non_coupled_model(periods, msw_parameters: dict, delta: np.float64):
     sim = NonCoupledExperimentalSimulation(msw_parameters, delta)
+    sim.run(periods)
+    return sim.msw, sim.log
+
+def run_non_coupled_model(periods, msw_parameters: dict, delta: np.float64):
+    sim = NonCoupledSimulation(msw_parameters, delta)
     sim.run(periods)
     return sim.msw, sim.log

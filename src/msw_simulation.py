@@ -54,7 +54,7 @@ class MegaSwap:
         self.itime = itime
         self.ds = self.unsaturated_zone.update(self.qrch[self.itime], self.storage_formulation.gwl_table)
         self.vsim = self.qrch[self.itime] - self.ds / self.dtgw
-        self.storage_formulation.set_initial_gwl_table(self.qrch[self.itime])
+        self.storage_formulation.set_initial_estimate_gwl_table(self.qrch[self.itime])
         return self.vsim
 
     def do_iter(self, iter: int) -> float:

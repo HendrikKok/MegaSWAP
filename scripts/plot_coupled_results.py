@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import imod
 
-def plot_results(log, megaswap, ntime_) -> None:
-    path = "../MegaSWAP/results/"
+def plot_results(log, megaswap, ntime_, name:str = '') -> None:
+    path = f"../MegaSWAP/results/{name}/"
     phead_log = log.phead
     nbox_log = log.nbox
     gwl_log = log.mf6_head
@@ -88,15 +88,15 @@ def plot_results(log, megaswap, ntime_) -> None:
     msw_sc1 = svat_per["    sc1(m3/m2/m)"][0:ntime_]
 
     # for ii in range(5):
-    ii = 99
+    ii = 0
     ax["2"].plot(log.sc1[:, ii], label=f"sc1 iter={ii}")
         # ax['4'].plot(log.sf_type[:,ii], label = 's-formulation')
     ax["2"].legend()
-    ax["2"].plot(msw_sc1,'--', label="sc1_msw")
+    # ax["2"].plot(msw_sc1,'--', label="sc1_msw")
     
     for iter in range(5):
         ax["3"].plot(log.msw_head[:, iter], color = 'grey')
-    iter = 99
+    iter = 0
     ax["3"].plot(log.msw_head[:, iter], label="msw-heads")
     ax["3"].plot(log.mf6_head[:, iter], label="mf6-heads", linestyle="--",)
     

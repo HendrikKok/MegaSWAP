@@ -94,12 +94,12 @@ class StorageFormulation:
         sc1_level = minmax(sc1_level, sc1_min, 1.0)
         return sc1_balance, sc1_level
     
-    def set_initial_gwl_table(self, qrch):
+    def set_initial_estimate_gwl_table(self, qrch):
         # initial estimate of gwl_table, based on the unsaturated zone alone
         self.s = self.s_old + qrch + self.qmodf
         self.gwl_table, self.ig_table, self.fig_table = self.database.get_gwl_table_from_storage(self.s, self.ig_table)
-        pass
-        
+        pass 
+
     def update(
         self,
         gwl_mf6,
