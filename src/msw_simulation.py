@@ -10,7 +10,9 @@ class MegaSwap:
 
     def __init__(self, parameters):
         self.qrch = parameters["qrch"]
+        self.gwl = parameters["gwl"]
         self.pet = parameters["qpet"]
+        self.qrot = parameters["qrot"]
         self.dtgw = parameters["dtgw"]
         self.database = DataBase(
             rootzone_dikte=parameters["rootzone_dikte"],
@@ -83,11 +85,12 @@ class MegaSwapExperimental(MegaSwap):
         self.ponding.add_precipitation(self.qrch[itime])
         self.qrch[itime] = self.ponding.get_infiltration_flux(gwl)
         self.evap_ponding = self.ponding.get_ponding_evaporation(self.pet[itime])
+        self.soil.update(self.qrch[itime], self.pet[itime], self.dtgw)
         if self.ponding.volume > 0.0 or gwl > self.database.mv:
             self.soil.reset()
-        else:
-            self.soil.update(self.qrch[itime], self.pet[itime], self.dtgw)
         self.evap_soil = self.soil.get_actual_evaporation()
+        
+        self.qrch[itime] -= (self.qrot[itime] + self.evap_soil) 
         self.ds = self.unsaturated_zone.update(self.qrch[itime], gwl)
         self.vsim = self.qrch[itime] - self.ds / self.dtgw
         ig, _ = self.database.gwl_to_index(gwl)

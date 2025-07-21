@@ -55,6 +55,7 @@ class UnsaturatedZone:
         # updates unsaturated zone for fixed gwl and given recharge on top
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(gwl_table)
         # qrch = self._get_qrch(qrch,gwl_table)
+
         if new_time:
             self.qmf = np.copy(self.qmv_old)
         for ibox in self.non_submerged_boxes:
@@ -99,7 +100,7 @@ class UnsaturatedZone:
             )
         # update qmv's
         self.qmv[:] = 0.0
-        self.qmv[ibmax - 1] = -(self.sv[ibmax] - self.sv_old[ibmax]) / self.dtgw + qmodf
+        self.qmv[ibmax - 1] = -(self.sv[ibmax] - self.sv_old[ibmax]) / self.dtgw + float(qmodf.iloc[0])
         for ibox in range(ibmax - 2, -1, -1):
             self.qmv[ibox] = (
                 -(self.sv[ibox + 1] - self.sv_old[ibox + 1]) / self.dtgw

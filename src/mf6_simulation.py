@@ -278,7 +278,7 @@ class NonCoupledExperimentalSimulation:
     Run all stress periods in a simulation
     """
 
-    def __init__(self, msw_parameters: dict, delta: np.float64):
+    def __init__(self, msw_parameters: dict, delta: np.float64 = None):
         self.mf6_head = np.ones(5) * msw_parameters["initial_gwl"]
         self.mf6_sto = np.ones(5) * 0.001
         self.mf6_rch = np.zeros(1)
@@ -300,7 +300,7 @@ class NonCoupledExperimentalSimulation:
         vsim, sc1 = self.msw.prepare_timestep(self.iperiod, self.mf6_head[0])
         self.msw.unsaturated_zone.qmv = np.copy(qmv_old)
         self.mf6_rch[:] = vsim
-        self.mf6_sto[0] = sc1
+        self.mf6_sto[0] = float(sc1.iloc[0])
         mf6_head_old = np.copy(self.mf6_head[0])
         qmodf = 0.0
         # Convergence loop
@@ -309,7 +309,7 @@ class NonCoupledExperimentalSimulation:
                 vsim, sc1 = self.msw.do_iter(self.iperiod, self.mf6_head[0])
                 self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
                 self.mf6_rch[:] = vsim
-                self.mf6_sto[0] = sc1
+                self.mf6_sto[0] = float(sc1.iloc[0])
             has_converged = False
             if iter > 6:
                 has_converged = True
@@ -318,8 +318,11 @@ class NonCoupledExperimentalSimulation:
             if has_converged:
                 break
             if iter == 1:
-                self.mf6_head[0] += self.delta
-                self.mf6_head[0] = min(self.mf6_head[0], 0.0)
+                if self.delta is not None:                                 # mf6 heads are a constantly increasing value
+                    self.mf6_head[0] += self.delta
+                    self.mf6_head[0] = min(self.mf6_head[0], 0.0)
+                else:
+                    self.mf6_head[0] = self.msw.gwl[self.iperiod]
         qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - (vsim)
         self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
         self.log_exchange_vars(iter, nbox, iter, qmodf, vsim)
@@ -336,7 +339,7 @@ class NonCoupledExperimentalSimulation:
         self.log.sc1[self.iperiod, iter] = self.mf6_sto[0]
         self.log.msw_head[self.iperiod, iter] = self.msw.storage_formulation.gwl_table
         self.log.mf6_head[self.iperiod, iter] = self.mf6_head[0]
-        self.log.qmodf[self.iperiod, iter] = qmodf
+        self.log.qmodf[self.iperiod, iter] = float(qmodf)
         self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
         self.log.nbox[self.iperiod] = nbox
         self.log.vsim[self.iperiod] = vsim
