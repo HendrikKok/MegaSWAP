@@ -4,6 +4,7 @@ from src.database import DataBase
 from src.utils import phead_to_index
 
 class UnsaturatedZone:
+    sigma = np.full(18, np.nan, dtype = np.float64)
 
     def __init__(
         self,
@@ -35,6 +36,7 @@ class UnsaturatedZone:
         for ibox in range(self.database.nbox):
             self.qmv[ibox] = init_qmv(self.ig_table, self.fig_table, self.ip[ibox], self.fip[ibox],self.database.qmrtb)
         self.qmv_old = np.copy(self.qmv)    
+        self.active = np.ones(18)
 
     def _get_qrch(self, qrch, gwl_table) -> float:
         if gwl_table >= 1000:  #self.database.mv
@@ -51,9 +53,12 @@ class UnsaturatedZone:
         # update phead with default values: equilibrium pressure head 
         # for the current groundwater level
         dpgw = self.database.box_top[0] - gwl_table
-        self.phead[:] = -dpgw + 0.5 * self.database.rootzone_dikte
+        self.phead[:] = np.nan # -dpgw + 0.5 * self.database.rootzone_dikte    # DEBUG!!!!
         # updates unsaturated zone for fixed gwl and given recharge on top
         self.non_submerged_boxes = self.database.get_non_submerged_boxes(gwl_table)
+        #update active array
+        self.active[:] = 0
+        self.active[self.non_submerged_boxes] = 1
         # qrch = self._get_qrch(qrch,gwl_table)
         if new_time:
             self.qmf = np.copy(self.qmv_old)
@@ -63,9 +68,9 @@ class UnsaturatedZone:
                 qin = -qrch
             else:
                 qin = self.qmv[ibox - 1]
-            sigma = self.sv_old[ibox] - qin * self.dtgw
+            self.sigma[ibox] = self.sv_old[ibox] - qin * self.dtgw
             self.ip[ibox], self.fip[ibox] = self.database.sigma2ip(
-                sigma, self.ig_table, self.fig_table, ibox, self.dtgw, self.ip[ibox], self.fip[ibox]
+                self.sigma[ibox], self.ig_table, self.fig_table, ibox, self.dtgw, self.ip[ibox], self.fip[ibox]
             )
             if self.ip[ibox] < 0:
                 self.phead[ibox] = self.database.ptb["value"][self.ip[ibox]] + self.fip[

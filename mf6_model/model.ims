@@ -1,31 +1,30 @@
-BEGIN options
-  PRINT_OPTION  summary
-  COMPLEXITY  complex
-  NO_PTC  all
-END options
+# File written with iMOD Python version: 1.0.0rc5
 
-BEGIN nonlinear
-  OUTER_DVCLOSE  1.00000000E-04
-  OUTER_MAXIMUM  2000
-  UNDER_RELAXATION  dbd
-  UNDER_RELAXATION_GAMMA       0.05000000
-  UNDER_RELAXATION_THETA       0.70000000
-  UNDER_RELAXATION_KAPPA       0.08000000
-  UNDER_RELAXATION_MOMENTUM       0.00000000
-  BACKTRACKING_NUMBER  20
-  BACKTRACKING_TOLERANCE       2.00000000
-  BACKTRACKING_REDUCTION_FACTOR       0.20000000
-  BACKTRACKING_RESIDUAL_LIMIT  5.00000000E-04
-END nonlinear
+begin options
+  print_option summary
+end options
 
-BEGIN linear
-  INNER_MAXIMUM  100
-  INNER_DVCLOSE  1.00000000E-05
-  inner_rclose  1.00000000E-04  relative_rclose
-  LINEAR_ACCELERATION  bicgstab
-  RELAXATION_FACTOR       0.00000000
-  PRECONDITIONER_LEVELS  8
-  PRECONDITIONER_DROP_TOLERANCE       0.00100000
-  NUMBER_ORTHOGONALIZATIONS  2
-END linear
+begin nonlinear
+  outer_dvclose 0.001
+  outer_maximum 150
+  under_relaxation dbd
+  under_relaxation_theta 0.9
+  under_relaxation_kappa 0.0001
+  under_relaxation_gamma 0.0
+  under_relaxation_momentum 0.0
+  backtracking_number 0
+  backtracking_tolerance 0.0
+  backtracking_reduction_factor 0.0
+  backtracking_residual_limit 0.0
+end nonlinear
 
+begin linear
+  inner_maximum 30
+  inner_dvclose 0.001
+  inner_rclose 10.0 strict
+  linear_acceleration bicgstab
+  relaxation_factor 0.97
+  preconditioner_levels 0
+  preconditioner_drop_tolerance 0.0
+  number_orthogonalizations 0
+end linear

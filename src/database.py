@@ -3,23 +3,24 @@ import xarray as xr
 import pandas as pd
 from src.utils import cm2m, dc, phead_to_index, qmr2ip
 
-
+epsilon = 1e-6
 
 class DataBase:
 
     def __init__(self, rootzone_dikte: float, mv: float, dbase_path: str):
         tabel = xr.open_dataset(dbase_path)
-        tabel["svtb"] = tabel["svtb"].fillna(0.0)                          # needed for fill value issues in nc
-        tabel["qmrtb"] = tabel["qmrtb"].fillna(0.0)                        # needed for fill value issues in nc
-        self.mv = mv                                                       # surface level 
-        self.rootzone_dikte = rootzone_dikte                               # rootzone thickness   
-        self.set_constants_from_tabel(tabel)                               # set all needed variables from nc
+        tabel["svtb"] = tabel["svtb"].fillna(0.0)                           # needed for fill value issues in nc
+        tabel["qmrtb"] = tabel["qmrtb"].fillna(0.0)                         # needed for fill value issues in nc
+        self.mv = mv                                                        # surface level 
+        self.rootzone_dikte = rootzone_dikte                                # rootzone thickness   
+        self.set_constants_from_tabel(tabel)                                # set all needed variables from nc
         self.set_arrays(tabel)
-        # self.storage_tabel = np.full(self.svtb.ig.shape, np.nan)           # array to store temp-storage deficite estimates 
+        # self.storage_tabel = np.full(self.svtb.ig.shape, np.nan)          # array to store temp-storage deficite estimates 
         self.storage_tabel = pd.DataFrame(
                    data={"value": np.full(self.svtb.ig.shape, np.nan)  },
                    index=self.svtb.ig.to_numpy(),
                )
+        
         
     def set_constants_from_tabel(self, tabel: xr.Dataset) -> None:
         self.ddpptb = tabel.ddpptb
@@ -35,7 +36,7 @@ class DataBase:
         self.box_bottom = np.array(
             [
                 self.mv - self.rootzone_dikte,
-                -1.0 - self.dpczsl,
+                self.mv - self.rootzone_dikte - self.dpczsl,
                 -5.000,
                 -7.000,
                 -10.00,
@@ -89,6 +90,21 @@ class DataBase:
             10 ** (ptb_index[ptb_index > 0] * self.ddpptb)
         )
         self.ptb = pd.DataFrame(data={"value": ptb_values}, index=ptb_index)
+        self.thickness = xr.DataArray(
+            data = self.box_top-self.box_bottom,
+            coords = {
+                'ib': ib,
+            },
+            dims = ['ib']
+        )
+        self.thetatb = tabel["thetatb"].assign_coords(
+            {
+                "ip": ip,
+                "ig": ig,
+                "ib": ib,
+            }
+        ) # * self.thickness
+
 
     def ip_in_bounds(self, ip, fip):
         if ip > self.svtb.ip.values[-2]:
@@ -121,9 +137,12 @@ class DataBase:
     def nearest_from_current_ip(self, new_ip, sigma1d, old_ip):
         index_in_sigma1d = np.flatnonzero(sigma1d.sel(ip=new_ip) == sigma1d)
         ips_in_sigma1d = self.qmrtb.ip[index_in_sigma1d]
+        dsigma = sigma1d.sel(ip=new_ip) - sigma1d.sel(ip=old_ip)
         if index_in_sigma1d.size > 1:
             new_index = np.argmin(abs(ips_in_sigma1d-old_ip).to_numpy())
             new_ip = ips_in_sigma1d[new_index].item()
+        elif abs(dsigma) < epsilon:
+            new_ip = old_ip
         return  new_ip
     
     def sigma2ip(self, sigma, ig, fig, ibox: int, dtgw: float, current_ip: int, current_fip: float) -> tuple[int, float]:
