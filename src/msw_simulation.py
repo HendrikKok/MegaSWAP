@@ -81,6 +81,12 @@ class MegaSwapExperimental(MegaSwap):
     svtb_log = np.full(18, np.nan)
     sc1_bak1 = sc1_min
     iter = 0
+    sc2 = 0
+    gwl_old = None
+    ip_sc1 = np.full(18, np.nan)
+    fip_sc1 = np.full(18, np.nan)
+    s_mf_new  = 0.
+    s_mf_old  = 0.
 
     def get_sof_parameters(self) -> tuple[float, float]:
         self.sof_conductance = self.ponding.area / self.ponding.soil_resistance
@@ -100,18 +106,24 @@ class MegaSwapExperimental(MegaSwap):
 
         # self.qrch[itime] -= self.evap_soil
         self.qrch[itime] -= qtree
-        _ , _ = self.do_iter(itime, gwl)
+        _ , _ = self.do_iter(itime, gwl,True)
         return self.vsim, self.sc1
     
-    def do_iter(self, itime: int, gwl:float) -> tuple[float, float]:
-        self.ds = self.unsaturated_zone.update(self.qrch[itime], gwl)
+    def do_iter(self, itime: int, gwl:float, first:bool = False) -> tuple[float, float]:
+        self.s_mf_old = np.copy(self.s_mf_new)
+        if self.gwl_old is None:
+            self.gwl_old = np.copy(gwl)
+        self.ds = self.unsaturated_zone.update(self.qrch[itime], gwl, first)
         self.vsim = self.qrch[itime] - self.ds / self.dtgw
         ig, fig = self.database.gwl_to_index(gwl)
+        # update externals
+        self.unsaturated_zone.ig_table = ig
+        self.unsaturated_zone.fig_table = fig
         self.sc1 = self.get_sc1(ig, self.unsaturated_zone.ip, self.unsaturated_zone.fip)
         if gwl > self.database.mv:
             self.sc1 = 1.0
-        self. _save_to_stabilise_sc1()
         self.iter += 1
+        self.gwl_old = np.copy(gwl)
         return self.vsim, max(self.sc1, 0.001)
     
     def finalise_timestep(self, gwl, qmodf, save_to_old) -> None:
@@ -129,19 +141,31 @@ class MegaSwapExperimental(MegaSwap):
         ip = self.unsaturated_zone.ip
         fip = self.unsaturated_zone.fip
         self.theta[:] = np.nan
-        for ibox in range(4):
+        for ibox in range(18):
             theta1d = self.database.thetatb.sel(ib=ibox, ig=ig) + fig * (self.database.thetatb.sel(ib=ibox, ig=ig + 1) - self.database.thetatb.sel(ib=ibox, ig=ig))
             ip_box = ip[ibox]
             fip_box = fip[ibox]
             self.theta[ibox] = (theta1d.sel(ip=ip_box).item() + fip_box * (theta1d.sel(ip=ip_box + 1).item() - theta1d.sel(ip=ip_box).item()))
 
-    def get_summed_s(self,ig,ip,fip):
+    def get_summed_s(self,ip, fip,ig):
         s =0.0
         for ibox in self.unsaturated_zone.non_submerged_boxes:
             s += self.database.svtb.sel(ib=ibox, ig=ig, ip=ip[ibox]).item() + fip[ibox] * (
             self.database.svtb.sel(ib=ibox, ig=ig, ip=ip[ibox] + 1).item()
             - self.database.svtb.sel(ib=ibox, ig=ig, ip=ip[ibox]).item()
         )
+        return s
+    
+    def get_summed_s2(self,ip,fip,ig,fig):
+        s = 0.0
+        for ibox in self.unsaturated_zone.non_submerged_boxes:
+            # slice over ip op positie fig
+            slin = self.database.svtb.sel(ib=ibox, ig=ig) + fig * (
+            self.database.svtb.sel(ib=ibox, ig=ig+1)
+            - self.database.svtb.sel(ib=ibox, ig=ig)
+            )
+            # interpolatie over ip
+            s += slin.sel(ip=ip[ibox]).item() + fip[ibox]*(slin.sel(ip=ip[ibox]+1).item()-slin.sel(ip=ip[ibox]).item())
         return s
     
     def get_box_thickness(self):
@@ -166,9 +190,23 @@ class MegaSwapExperimental(MegaSwap):
         return self.svtb_log
         
     def get_sc1(self,ig, ip, fip): 
-        s1 = self.get_summed_s(ig, ip, fip)
-        s2 = self.get_summed_s(ig + 1, ip, fip)
-        return self._stabilise_sc1(((s1 - s2) / (self.database.dpgwtb.loc[ig + 1] - self.database.dpgwtb.loc[ig])).item())
+        self.s1 = self.get_summed_s(ip, fip, ig)
+        self.s2 = self.get_summed_s(ip, fip, ig + 1)
+        return (((self.s1 - self.s2) / (self.database.dpgwtb.loc[ig + 1] - self.database.dpgwtb.loc[ig])).item())
+
+    def get_sc2(self,s1,s2,dgwl): 
+        # ig, fig = self.database.gwl_to_index(s1,s2)
+        # s1 = self.get_summed_s2(ip, fip, ig, fig)
+        # ig, fig = self.database.gwl_to_index(gwl_old)
+        # s2 = self.get_summed_s2(ip, fip, ig, fig)
+        # return (s1 - s2) / (gwl-gwl_old)
+        
+        # self.s_mf_new = self.get_summed_s(self.ip_sc1, self.fip_sc1, ig)
+        # if self.s_mf_old == None:
+        #     self.s_mf_old = self.get_summed_s(self.ip_sc1, self.fip_sc1, ig+1)
+        # # self.s2 = self.get_summed_s(self.ip_sc1, self.fip_sc1, ig+1)
+        # return (((self.s_mf_new - self.s_mf_old) / (self.database.dpgwtb.loc[ig + 1] - self.database.dpgwtb.loc[ig])).item())
+        return (s1-s2)/dgwl
 
     def _stabilise_sc1(self, sc1: float) -> float:
         # stabilisation in case of oscillation

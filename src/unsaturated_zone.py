@@ -87,9 +87,13 @@ class UnsaturatedZone:
             self.qmv[ibox] = get_qmv(
                 self.sv[ibox], self.sv_old[ibox], ibox, qin, self.qmv, self.dtgw
             )
+            self.ip_init = np.copy(self.ip)
+            self.fip_init = np.copy(self.fip)
         self.database.update_unsaturated_variables(self.qmv, self.phead, self.non_submerged_boxes)
-        return summed_sv(self.sv) - summed_sv(self.sv_old)
-
+        self.s = self.sv[self.non_submerged_boxes].sum()
+        self.s_old = self.sv_old[self.non_submerged_boxes].sum()
+        return self.sv[self.non_submerged_boxes].sum() - self.sv_old[self.non_submerged_boxes].sum()
+    
     def finalize_timestep(self, gwl_table, qmodf: float, save_to_old: bool = True):
         # updates the internal states of unsaturated zone, based on the new gwl
         self.ig_table, self.fig_table = self.database.gwl_to_index(
@@ -128,6 +132,8 @@ class UnsaturatedZone:
             else:
                 self.phead[ibox] = -cm2m*(10**((self.ip[ibox]+self.fip[ibox])*self.database.ddpptb))
         # save to old
+        self.s = self.sv[self.non_submerged_boxes].sum()
+        self.s_old = self.sv_old[self.non_submerged_boxes].sum()
         if save_to_old:
             self.sv_old = np.copy(self.sv)
         return

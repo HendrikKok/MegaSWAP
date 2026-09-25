@@ -8,7 +8,7 @@ def plot_results(log, megaswap, ntime_, max_infiltration:float, name:str = '', n
     path = f"../MegaSWAP/results/{name}/"
     phead_log = log.phead
     nbox_log = log.active.sum(axis=1)
-    gwl_log = log.mf6_head
+    gwl_log = log.mf6_head[:,-1]
     ntime = nbox_log.size
     color_index = np.zeros(ntime, dtype=np.int32)
     

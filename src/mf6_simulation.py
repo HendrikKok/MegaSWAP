@@ -38,6 +38,9 @@ class Logging:
         self.active = np.full((ntime, 18), np.nan)
         self.box_thicknes = np.full((18), np.nan)
         self.sigma = np.full((ntime, 18), np.nan)
+        self.sc2 = np.full((ntime), np.nan)
+        self.s1 = np.full((ntime), np.nan)
+        self.s2 = np.full((ntime), np.nan)
 
 class Simulation:
     """
@@ -229,6 +232,7 @@ class CoupledExperimentalSimulation(Simulation):
         self.mf6_sof_elev[0] = sof_elev
         self.log.qrch_init = np.copy(msw_parameters["qrch"])
         self.log.qrch = np.zeros_like(self.log.qrch_init)
+        self.mf6_head_old = np.copy(self.mf6_head)
 
     def update(self):
         self.mf6.prepare_time_step(0.0)
@@ -244,21 +248,26 @@ class CoupledExperimentalSimulation(Simulation):
         for iter in range(1, self.max_iter + 1):
             if iter <20:
                 vsim, sc1 = self.msw.do_iter(self.iperiod, self.mf6_head[0])
+                self.log.ds[self.iperiod, iter-1] = self.msw.ds
                 self.msw.unsaturated_zone.qmv = np.copy(qmv_old) # reset qmv inside loop
                 self.mf6_rch[:] = vsim
                 self.mf6_sto[0] = sc1
             has_converged = self.do_iter(1)
             # self.msw.finalise_timestep(self.mf6_head[0], qmodf, False)
             nbox = self.msw.unsaturated_zone.non_submerged_boxes.size
-            self.log_exchange_vars(iter -1, nbox, iter, qmodf, vsim)
+            # self.log_exchange_vars(iter -1, nbox, iter, qmodf, vsim)
             if has_converged:
                 break
+        self.log.sv_old[self.iperiod,:] = self.msw.unsaturated_zone.sv_old[:] 
+        self.log.ds[self.iperiod, -1] = self.msw.ds
         qmodf = ((self.mf6_head[0] - mf6_head_old) * sc1) - (vsim)
         self.mf6.finalize_solve(1)
         self.mf6.finalize_time_step()
+        self.log.s1[self.iperiod] = self.msw.s1
+        self.log.s2[self.iperiod] = self.msw.s2
         self.msw.finalise_timestep(self.mf6_head[0], qmodf, True)
-        self.msw.get_thetas() # ig index updated in finalise_timestep only
-        self.log_exchange_vars(-1, nbox, iter, qmodf, vsim)
+        # self.msw.get_thetas() # ig index updated in finalise_timestep only
+        self.log_exchange_vars(-1, nbox, -1, qmodf, vsim)
         self.iperiod += 1
         current_time = self.mf6.get_current_time()
         return current_time
@@ -271,11 +280,10 @@ class CoupledExperimentalSimulation(Simulation):
         self.log.phead[self.iperiod, :] = self.msw.unsaturated_zone.phead
         self.log.nbox[self.iperiod] = nbox
         self.log.vsim[self.iperiod] = vsim
-        self.log.s[self.iperiod] = self.msw.storage_formulation.s
-        self.log.s_old[self.iperiod] = self.msw.storage_formulation.s_old
+        self.log.s[self.iperiod] = self.msw.unsaturated_zone.s
+        self.log.s_old[self.iperiod] = self.msw.unsaturated_zone.s_old
         self.log.niter[self.iperiod] = niter
-        self.log.ds[self.iperiod, iter] = self.msw.ds
-        # self.log.qmv[self.iperiod, iter, 0:4] = self.msw.unsaturated_zone.qmv[0:4]
+        self.log.qmv[self.iperiod, :] = self.msw.unsaturated_zone.qmv[:]
         self.log.qrun[self.iperiod] = self.msw.qrun
         self.log.vpond[self.iperiod] = self.msw.ponding.volume
         self.log.qmax[self.iperiod] = self.msw.qmax
@@ -289,6 +297,9 @@ class CoupledExperimentalSimulation(Simulation):
         self.log.fip[self.iperiod,:] = self.msw.unsaturated_zone.fip[:]
         self.log.sigma[self.iperiod,:] = self.msw.unsaturated_zone.sigma[:]
         self.log.sv[self.iperiod,:] = self.msw.unsaturated_zone.sv[:]
+        self.log.sc2[self.iperiod] = self.msw.sc2
+
+
 
 class NonCoupledExperimentalSimulation:
     """
@@ -385,8 +396,7 @@ class NonCoupledExperimentalSimulation:
         self.log.fig[self.iperiod] = self.msw.unsaturated_zone.fig_table
         self.log.ip[self.iperiod,:] = self.msw.unsaturated_zone.ip
         self.log.fip[self.iperiod,:] = self.msw.unsaturated_zone.fip
-        self.log.sv[self.iperiod,:] = self.msw.unsaturated_zone.sv[:]
-        
+        self.log.sv[self.iperiod,:] = self.msw.unsaturated_zone.sv[:]        
         self.log.theta[self.iperiod,:] = self.msw.theta[:]
         self.log.svtb[self.iperiod,:] = self.msw.svtb_log[:]
         self.log.active[self.iperiod,:] = self.msw.unsaturated_zone.active[:]

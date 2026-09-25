@@ -97,13 +97,14 @@ class DataBase:
             },
             dims = ['ib']
         )
-        self.thetatb = tabel["thetatb"].assign_coords(
-            {
-                "ip": ip,
-                "ig": ig,
-                "ib": ib,
-            }
-        ) # * self.thickness
+        if "thetatb" in tabel.variables:
+            self.thetatb = tabel["thetatb"].assign_coords(
+                {
+                    "ip": ip,
+                    "ig": ig,
+                    "ib": ib,
+                }
+            ) # * self.thickness
 
 
     def ip_in_bounds(self, ip, fip):
@@ -206,7 +207,7 @@ class DataBase:
     def gwl_to_index(self, gwl) -> tuple[np.ndarray, np.ndarray]:
         dpgw = self.mv - gwl
         igk = self.igdc["index_gwtb"][
-            np.floor((dpgw + dc) / self.ddgwtb)
+            np.int32(np.floor((dpgw + dc) / self.ddgwtb))
         ] 
         # ponding
         if dpgw < 0.0:

@@ -6,6 +6,8 @@ def plot_wbal(ntime, msw_log, qrch, results_path:str):
 
     ##### waterbalance internals, summed
     # ds = -msw_log.ds[:,-1]
+    msw_log.sv_old[np.isnan(msw_log.sv_old)] = 0.0
+    msw_log.sv[np.isnan(msw_log.sv)] = 0.0
     ds = msw_log.sv_old.sum(axis=1) - msw_log.sv.sum(axis=1)
     ds_pos = np.zeros_like(ds)
     ds_pos[ds > 0.0] = ds[ds > 0.0]
